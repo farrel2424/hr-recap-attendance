@@ -1,0 +1,39 @@
+# ── Data pribadi / sensitif ──────────────────────────────────────
+# Database SQLite (berisi data absensi karyawan)
+database/absensi.db
+database/*.db
+database/*.db-shm      # WAL shared-memory file
+database/*.db-wal      # WAL log file
+
+# File Excel absensi yang diupload
+*.xlsx
+*.xls
+*.csv
+
+# ── Python ──────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# ── Streamlit ────────────────────────────────────────────────────
+.streamlit/secrets.toml   # jika pernah pakai st.secrets
+
+# ── OS / Editor ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
