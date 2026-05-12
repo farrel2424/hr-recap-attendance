@@ -2,8 +2,8 @@
 # Database SQLite (berisi data absensi karyawan)
 database/absensi.db
 database/*.db
-database/*.db-shm      # WAL shared-memory file
-database/*.db-wal      # WAL log file
+database/*.db-shm      
+database/*.db-wal      
 
 # File Excel absensi yang diupload
 *.xlsx
