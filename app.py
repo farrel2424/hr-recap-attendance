@@ -306,19 +306,19 @@ def get_employee_daily(file_bytes, account):
             continue
 
         # Override → H jika Earliest DAN Latest keduanya "Not punched"
-        # (karyawan tidak tap sama sekali → indikasi cuti/leave)
         earliest_str = str(r["Earliest"]).strip().lower() if pd.notna(r["Earliest"]) else ""
         latest_str   = str(r["Latest"]).strip().lower()   if pd.notna(r["Latest"])   else ""
         if earliest_str in _NOT_PUNCHED and latest_str in _NOT_PUNCHED:
             tipe = "H"
 
         rows.append({
-            "Tanggal"  : r["Tanggal"],
-            "Shift"    : str(r["Shift"]).strip(),
-            "Tipe"     : tipe,
-            "Jam Masuk": str(r["Earliest"]).strip() if pd.notna(r["Earliest"]) else "--",
-            "Status"   : str(r["Attendance results"]).strip() if pd.notna(r["Attendance results"]) else "--",
-            "Jam Kerja": r["Jam Kerja"],
+            "Tanggal"     : r["Tanggal"],
+            "Shift"       : str(r["Shift"]).strip(),
+            "Tipe"        : tipe,
+            "Jam Masuk"   : str(r["Earliest"]).strip() if pd.notna(r["Earliest"]) else "--",
+            "Status"      : str(r["Attendance results"]).strip() if pd.notna(r["Attendance results"]) else "--",
+            "Jam Kerja"   : r["Jam Kerja"],
+            "Klasifikasi" : classify(r["Earliest"], r["Shift"], r["Attendance results"]),
         })
 
     detail_df = pd.DataFrame(rows).sort_values("Tanggal").reset_index(drop=True)
@@ -379,33 +379,146 @@ def show_daily_detail(account, nama, rules, file_bytes):
 
     st.markdown("<div style='margin-top:1.2rem'></div>", unsafe_allow_html=True)
 
-    # ── Tabel Detail Harian ──
-    st.markdown('<p style="font-weight:700;font-size:.9rem;color:#1e293b;margin-bottom:.5rem;">'
-                '📅 Detail per Hari</p>', unsafe_allow_html=True)
+    # ── Helper: durasi terlambat ──
+    def _menit_terlambat(row):
+        shift_start = parse_shift_start(row["Shift"])
+        jam_masuk   = parse_time_to_minutes(row["Jam Masuk"])
+        if shift_start is None or jam_masuk is None:
+            return "--"
+        diff = jam_masuk - shift_start
+        if diff <= 0:
+            return "--"
+        h, m = divmod(diff, 60)
+        return f"{h}j {m}m" if h > 0 else f"{m} mnt"
 
-    TIPE_EMOJI = {"S1": "🌅 S1", "S2": "🌙 S2", "H": "🏖️ H"}
-    detail_display = detail_df.copy()
-    detail_display["Tipe"] = detail_display["Tipe"].map(lambda x: TIPE_EMOJI.get(x, x))
-    detail_display["Jam Kerja"] = detail_display["Jam Kerja"].apply(
-        lambda x: f"{x:.1f} jam" if x > 0 else "—"
-    )
+    KLAS_EMOJI = {"Normal": "✅ Normal", "Late": "🟡 Late", "K": "🔴 K"}
 
-    st.dataframe(
-        detail_display,
-        use_container_width=True,
-        height=400,
-        hide_index=True,
-        column_config={
-            "No."      : st.column_config.NumberColumn("No.", width="small"),
-            "Tanggal"  : st.column_config.TextColumn("Tanggal", width="medium"),
-            "Tipe"     : st.column_config.TextColumn("Tipe", width="small"),
-            "Shift"    : st.column_config.TextColumn("Shift", width="large"),
-            "Jam Masuk": st.column_config.TextColumn("Jam Masuk", width="small"),
-            "Status"   : st.column_config.TextColumn("Status Absensi", width="large"),
-            "Jam Kerja": st.column_config.TextColumn("Jam Kerja", width="small"),
-        },
-    )
-    st.caption(f"Total {len(detail_df)} hari tercatat  •  Klik di luar kotak ini untuk menutup")
+    late_df = detail_df[detail_df["Klasifikasi"] == "Late"].copy()
+    k_df    = detail_df[detail_df["Klasifikasi"] == "K"].copy()
+    n_late  = len(late_df)
+    n_k     = len(k_df)
+
+    # ── Expander 1: Rincian Keterlambatan ──
+    late_label = f"⚠️ Rincian Keterlambatan  —  🟡 {n_late} Late  ·  🔴 {n_k} K"
+    with st.expander(late_label, expanded=False):
+        if n_late == 0 and n_k == 0:
+            st.success("✅ Tidak ada keterlambatan pada periode ini.")
+        else:
+            mc1, mc2 = st.columns(2)
+            with mc1:
+                st.markdown(f"""
+<div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:10px;
+            padding:.8rem 1.1rem;text-align:center;margin-bottom:.8rem;">
+  <div style="font-size:0.72rem;color:#92400e;font-weight:600;text-transform:uppercase;
+              letter-spacing:.06em;">🟡 Late</div>
+  <div style="font-size:1.7rem;font-weight:700;color:#d97706;font-family:'DM Mono',monospace;">
+    {n_late}<span style="font-size:.9rem"> hari</span>
+  </div>
+</div>""", unsafe_allow_html=True)
+            with mc2:
+                st.markdown(f"""
+<div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:10px;
+            padding:.8rem 1.1rem;text-align:center;margin-bottom:.8rem;">
+  <div style="font-size:0.72rem;color:#991b1b;font-weight:600;text-transform:uppercase;
+              letter-spacing:.06em;">🔴 K (&gt;2 jam)</div>
+  <div style="font-size:1.7rem;font-weight:700;color:#dc2626;font-family:'DM Mono',monospace;">
+    {n_k}<span style="font-size:.9rem"> hari</span>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+            late_k_combined = pd.concat([late_df, k_df]).sort_values("Tanggal").reset_index(drop=True)
+            late_k_combined["No."]       = range(1, len(late_k_combined) + 1)
+            late_k_combined["Terlambat"] = late_k_combined.apply(_menit_terlambat, axis=1)
+            late_k_combined["Klasifikasi"] = late_k_combined["Klasifikasi"].map(
+                lambda x: KLAS_EMOJI.get(x, x) if x else "—"
+            )
+
+            st.dataframe(
+                late_k_combined[["No.", "Tanggal", "Klasifikasi", "Shift", "Jam Masuk", "Terlambat"]],
+                use_container_width=True,
+                height=min(60 + len(late_k_combined) * 35, 380),
+                hide_index=True,
+                column_config={
+                    "No."        : st.column_config.NumberColumn("No.", width="small"),
+                    "Tanggal"    : st.column_config.TextColumn("Tanggal", width="medium"),
+                    "Klasifikasi": st.column_config.TextColumn("Status", width="small"),
+                    "Shift"      : st.column_config.TextColumn("Shift", width="large"),
+                    "Jam Masuk"  : st.column_config.TextColumn("Jam Masuk", width="small"),
+                    "Terlambat"  : st.column_config.TextColumn("Terlambat", width="small"),
+                },
+            )
+
+    # ── Expander 2: Rincian per Tipe Shift (S1 / S2 / H) ──
+    tipe_counts = detail_df["Tipe"].value_counts()
+    s1_n = tipe_counts.get("S1", 0)
+    s2_n = tipe_counts.get("S2", 0)
+    h_n  = tipe_counts.get("H",  0)
+    shift_label = f"📅 Rincian per Tipe Shift  —  🌅 S1: {s1_n}  ·  🌙 S2: {s2_n}  ·  🏖️ H: {h_n}"
+    with st.expander(shift_label, expanded=False):
+        tab_s1, tab_s2, tab_h = st.tabs(["🌅 S1", "🌙 S2", "🏖️ H"])
+
+        def _render_tipe_tab(tipe_key):
+            df_tipe = detail_df[detail_df["Tipe"] == tipe_key].copy().reset_index(drop=True)
+            if df_tipe.empty:
+                st.info(f"Tidak ada data tipe {tipe_key} pada periode ini.")
+                return
+            df_tipe["No."]         = range(1, len(df_tipe) + 1)
+            df_tipe["Klasifikasi"] = df_tipe["Klasifikasi"].map(
+                lambda x: KLAS_EMOJI.get(x, "—") if x else "—"
+            )
+            df_tipe["Jam Kerja"]   = df_tipe["Jam Kerja"].apply(
+                lambda x: f"{x:.1f} jam" if x > 0 else "—"
+            )
+            total_jam = detail_df[detail_df["Tipe"] == tipe_key]["Jam Kerja"].sum()
+            st.caption(f"{len(df_tipe)} hari  ·  Total jam kerja: {total_jam:.1f} jam")
+            st.dataframe(
+                df_tipe[["No.", "Tanggal", "Shift", "Jam Masuk", "Klasifikasi", "Jam Kerja"]],
+                use_container_width=True,
+                height=min(60 + len(df_tipe) * 35, 420),
+                hide_index=True,
+                column_config={
+                    "No."        : st.column_config.NumberColumn("No.", width="small"),
+                    "Tanggal"    : st.column_config.TextColumn("Tanggal", width="medium"),
+                    "Shift"      : st.column_config.TextColumn("Shift", width="large"),
+                    "Jam Masuk"  : st.column_config.TextColumn("Jam Masuk", width="small"),
+                    "Klasifikasi": st.column_config.TextColumn("Klasifikasi", width="small"),
+                    "Jam Kerja"  : st.column_config.TextColumn("Jam Kerja", width="small"),
+                },
+            )
+
+        with tab_s1: _render_tipe_tab("S1")
+        with tab_s2: _render_tipe_tab("S2")
+        with tab_h:  _render_tipe_tab("H")
+
+    # ── Expander 3: Detail Lengkap per Hari ──
+    with st.expander(f"🗂️ Detail Lengkap per Hari  —  {len(detail_df)} hari tercatat", expanded=False):
+        TIPE_EMOJI = {"S1": "🌅 S1", "S2": "🌙 S2", "H": "🏖️ H"}
+        detail_display = detail_df.copy()
+        detail_display["Tipe"]        = detail_display["Tipe"].map(lambda x: TIPE_EMOJI.get(x, x))
+        detail_display["Klasifikasi"] = detail_display["Klasifikasi"].map(
+            lambda x: KLAS_EMOJI.get(x, "—") if x else "—"
+        )
+        detail_display["Jam Kerja"]   = detail_display["Jam Kerja"].apply(
+            lambda x: f"{x:.1f} jam" if x > 0 else "—"
+        )
+        st.dataframe(
+            detail_display,
+            use_container_width=True,
+            height=420,
+            hide_index=True,
+            column_config={
+                "No."        : st.column_config.NumberColumn("No.", width="small"),
+                "Tanggal"    : st.column_config.TextColumn("Tanggal", width="medium"),
+                "Tipe"       : st.column_config.TextColumn("Tipe", width="small"),
+                "Shift"      : st.column_config.TextColumn("Shift", width="large"),
+                "Jam Masuk"  : st.column_config.TextColumn("Jam Masuk", width="small"),
+                "Status"     : st.column_config.TextColumn("Status Absensi", width="large"),
+                "Klasifikasi": st.column_config.TextColumn("Klasifikasi", width="small"),
+                "Jam Kerja"  : st.column_config.TextColumn("Jam Kerja", width="small"),
+            },
+        )
+
+    st.caption("Klik di luar kotak ini untuk menutup")
 
 
 @st.cache_data(show_spinner=False)
@@ -431,9 +544,16 @@ def process_file(file_bytes):
         lambda r: classify(r["Earliest"], r["Shift"], r["Attendance results"]), axis=1
     )
 
+    # Rules diambil nilai terbanyak per Account (handle karyawan ganti Rules)
+    all_employees = (
+        df.groupby("Account")["Rules"]
+        .agg(lambda x: x.mode()[0])
+        .reset_index()
+    )
+
     classified = df[df["Status"].notna()]
     pivot = classified.pivot_table(
-        index=["Account", "Rules"],
+        index="Account",
         columns="Status",
         values="Shift",
         aggfunc="count",
@@ -444,7 +564,11 @@ def process_file(file_bytes):
         if col not in pivot.columns:
             pivot[col] = 0
 
-    # Ambil Name lengkap (misal "Dicky_Sum_SalesHead") dari baris pertama per Account
+    pivot = all_employees.merge(pivot, on="Account", how="left").fillna(0)
+    for col in ["Normal", "Late", "K"]:
+        pivot[col] = pivot[col].astype(int)
+
+    # Ambil Name lengkap dari baris pertama per Account
     name_map = df.groupby("Account")["Name"].first()
     pivot["Nama"] = pivot["Account"].map(name_map)
 
@@ -452,7 +576,6 @@ def process_file(file_bytes):
     pivot.insert(0, "No.", range(1, len(pivot) + 1))
     result = pivot[["No.", "Nama", "Account", "Rules", "Normal", "Late", "K"]].copy()
 
-    # Stats untuk diagnostik
     stats = {
         "total_rows": len(df),
         "classified": len(classified),
@@ -623,7 +746,7 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
                 st.error(f"❌ Gagal memproses file: {e}")
                 st.stop()
 
-        # Simpan ke database: baca raw sheet & ekstrak string periode
+        # Simpan ke database
         try:
             import io as _io
             import re as _re
@@ -644,11 +767,20 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
                     break
             if _periode is None:
                 _periode = "unknown"
+
+            # Samakan filter dengan process_file() agar data DB konsisten
+            df_raw = df_raw.dropna(subset=["Account", "Rules"])
+            df_raw = df_raw[~df_raw["Account"].astype(str).str.strip().isin(["", "--"])]
+
+            df_raw["_tipe_shift"] = df_raw["Shift"].apply(classify_shift_type)
+            df_raw["_status_klasifikasi"] = df_raw.apply(
+                lambda r: classify(r["Earliest"], r["Shift"], r["Attendance results"]), axis=1
+            )
             save_periode(df_raw, _periode)
         except Exception as e:
             st.warning(f"⚠️ Gagal simpan ke database: {e}")
     else:
-        # Ambil dari database — rename kolom lowercase → title-case
+        # Ambil dari database
         df_result = get_rekap(periode_dipilih)
         df_result = df_result.rename(columns={
             "nama": "Nama", "account": "Account", "rules": "Rules",
@@ -662,7 +794,6 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
             "employees": len(df_result),
             "dist": {}
         }
-        # Tambah kolom No. agar konsisten dengan hasil process_file
         df_result.insert(0, "No.", range(1, len(df_result) + 1))
 
     # ── Metric Cards ──
@@ -722,9 +853,7 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
     df_show = df_show.copy()
     df_show["No."] = range(1, len(df_show) + 1)
 
-    # Tampilkan dengan coloring via column_config
-    # on_select="rerun" → baris yang diklik memicu dialog rincian harian
-    st.caption("💡 **Klik baris karyawan** untuk melihat rincian harian (S1 / S2 / H)")
+    st.caption("💡 **Klik baris karyawan** untuk melihat rincian harian & tanggal keterlambatan")
     sel_event = st.dataframe(
         df_show,
         use_container_width=True,
