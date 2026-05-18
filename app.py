@@ -226,14 +226,15 @@ def _has_punch(val):
 
 def classify(earliest_raw, shift_text, att_result, latest_raw=None, leave_app=None):
     """
-    Kembalikan salah satu dari: Normal | Late | K | AL | 1/2 AL | WFA | None
+    Kembalikan salah satu dari: Normal | Late | 1/2 UL | AL | 1/2 AL | WFA | None
 
-    Logika tambahan (Normal Leave):
-    - att_result mengandung 'normal' dan 'leave':
-        • leave_app = AnnualLeave + ada punch in & out  → '1/2 AL'
-        • leave_app = AnnualLeave + tidak ada punch      → 'AL'
-        • leave_app = WorkFromHome/WFH + ada punch in & out → 'WFA'
-        • selain itu                                     → 'Normal'
+    Urutan pengecekan:
+    1. Cek Leave & Overtime Application secara langsung (tanpa perlu cek Attendance Results):
+       • WFH / WorkFromHome → WFA (langsung, tanpa syarat punch)
+       • AnnualLeave + ada punch in & out  → '1/2 AL'
+       • AnnualLeave + tidak ada punch      → 'AL'
+       • Leave jenis lain + att_result = "normal leave" → 'Normal'
+    2. Klasifikasi keterlambatan standar berdasarkan selisih jam masuk vs shift
     """
     att_lower   = str(att_result).strip().lower() if pd.notna(att_result) else ""
     shift_start = parse_shift_start(shift_text)
@@ -243,26 +244,24 @@ def classify(earliest_raw, shift_text, att_result, latest_raw=None, leave_app=No
     if shift_clean in SKIP_SHIFTS or shift_start is None:
         return None
 
-    # ── Deteksi Normal (Leave) ──────────────────────────────
+    leave_lower = leave_str.lower()
+
+    # ── 1. Cek Leave & Overtime Application secara langsung ──────────
+    # WFH / WorkFromHome → selalu WFA, tanpa perlu cek Attendance Results
+    if "workfromhome" in leave_lower or "wfh" in leave_lower:
+        return "WFA"
+
+    # AnnualLeave
+    if "annualleave" in leave_lower:
+        has_in  = _has_punch(earliest_raw)
+        has_out = _has_punch(latest_raw)
+        return "1/2 AL" if (has_in and has_out) else "AL"
+
+    # Leave jenis lain yang muncul di att_result sebagai "normal leave" → Normal
     if "normal" in att_lower and "leave" in att_lower:
-        leave_lower = leave_str.lower()
-
-        # AnnualLeave
-        if "annualleave" in leave_lower:
-            has_in  = _has_punch(earliest_raw)
-            has_out = _has_punch(latest_raw)
-            return "1/2 AL" if (has_in and has_out) else "AL"
-
-        # WorkFromHome / WFH
-        if "workfromhome" in leave_lower or "wfh" in leave_lower:
-            if _has_punch(earliest_raw) and _has_punch(latest_raw):
-                return "WFA"
-            return "Normal"   # WFH tanpa punch → Normal biasa
-
-        # Leave jenis lain → Normal
         return "Normal"
 
-    # ── Klasifikasi Keterlambatan Standar ──────────────────
+    # ── 2. Klasifikasi Keterlambatan Standar ──────────────────────────
     earliest = parse_time_to_minutes(earliest_raw)
     if earliest is None:
         return "Normal" if att_lower.startswith("normal") else None
@@ -619,6 +618,7 @@ def process_file(file_bytes):
     pivot["Nama"] = pivot["Account"].map(name_map)
 
     pivot = pivot.sort_values(["Rules", "Nama"]).reset_index(drop=True)
+    # No. hanya untuk ekspor Excel; tampilan UI menggunakan index 1-based
     pivot.insert(0, "No.", range(1, len(pivot) + 1))
     result = pivot[["No.", "Nama", "Account", "Rules",
                     "Normal", "Late", "1/2 UL", "AL", "1/2 AL", "WFA"]].copy()
@@ -784,10 +784,10 @@ with col_info:
 🔴 <strong>½UL</strong> — terlambat &gt; 2 jam<br>
 🟣 <strong>AL</strong> — Annual Leave (tanpa punch)<br>
 🩷 <strong>½AL</strong> — Annual Leave (ada punch in &amp; out)<br>
-🔵 <strong>WFA</strong> — Work From Home (ada punch in &amp; out)<br><br>
+🔵 <strong>WFA</strong> — Work From Home (kolom Leave = WFH)<br><br>
 <strong>Catatan:</strong><br>
 • ½UL tidak double-count ke Late<br>
-• WFH tanpa punch → Normal<br>
+• WFH langsung → WFA (tanpa cek Attendance Results)<br>
 • Shift Rest/Not scheduled → dilewati
 </div>
 """, unsafe_allow_html=True)
@@ -857,7 +857,7 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
     # ── Metric Cards ──
     total_n   = int(df_result["Normal"].sum())
     total_l   = int(df_result["Late"].sum())
-    total_k   = int(df_result["1/2 UL"].sum())
+    total_hul   = int(df_result["1/2 UL"].sum())
     total_al  = int(df_result["AL"].sum())
     total_hal = int(df_result["1/2 AL"].sum())
     total_wfa = int(df_result["WFA"].sum())
@@ -875,7 +875,7 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
   </div>
   <div class="metric-card metric-k">
     <div class="label">½ UL (&gt;2 jam)</div>
-    <div class="value">{total_k:,}</div>
+    <div class="value">{total_hul:,}</div>
   </div>
   <div class="metric-card metric-al">
     <div class="label">Annual Leave (AL)</div>
@@ -920,19 +920,22 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
     if show_late_only:
         df_show = df_show[(df_show["Late"] > 0) | (df_show["1/2 UL"] > 0)]
 
-    df_show = df_show.copy()
-    df_show["No."] = range(1, len(df_show) + 1)
+    # ── Tampilkan tabel TANPA kolom No. — gunakan index 1-based ──────
+    # Kolom No. tetap ada di df_show untuk keperluan ekspor Excel,
+    # tetapi tampilan UI menggunakan index DataFrame sehingga nomor
+    # selalu urut 1, 2, 3… meski user melakukan sort asc/desc.
+    df_display = df_show.drop(columns=["No."]).copy()
+    df_display.index = range(1, len(df_display) + 1)
 
     st.caption("💡 **Klik baris karyawan** untuk melihat rincian harian & tanggal keterlambatan")
     sel_event = st.dataframe(
-        df_show,
+        df_display,
         use_container_width=True,
         height=520,
-        hide_index=True,
+        hide_index=False,
         on_select="rerun",
         selection_mode="single-row",
         column_config={
-            "No."    : st.column_config.NumberColumn("No.", width="small"),
             "Nama"   : st.column_config.TextColumn("Nama", width="large"),
             "Account": st.column_config.TextColumn("Account", width="medium"),
             "Rules"  : st.column_config.TextColumn("Rules", width="medium"),
