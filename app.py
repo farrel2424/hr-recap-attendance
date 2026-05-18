@@ -316,6 +316,7 @@ def get_employee_daily(file_bytes, account):
             "Shift"       : str(r["Shift"]).strip(),
             "Tipe"        : tipe,
             "Jam Masuk"   : str(r["Earliest"]).strip() if pd.notna(r["Earliest"]) else "--",
+            "Jam Keluar"  : str(r["Latest"]).strip() if pd.notna(r["Latest"]) else "--",  # ← BARU
             "Status"      : str(r["Attendance results"]).strip() if pd.notna(r["Attendance results"]) else "--",
             "Jam Kerja"   : r["Jam Kerja"],
             "Klasifikasi" : classify(r["Earliest"], r["Shift"], r["Attendance results"]),
@@ -434,7 +435,7 @@ def show_daily_detail(account, nama, rules, file_bytes):
             )
 
             st.dataframe(
-                late_k_combined[["No.", "Tanggal", "Klasifikasi", "Shift", "Jam Masuk", "Terlambat"]],
+                late_k_combined[["No.", "Tanggal", "Klasifikasi", "Shift", "Jam Masuk", "Jam Keluar", "Terlambat"]],
                 use_container_width=True,
                 height=min(60 + len(late_k_combined) * 35, 380),
                 hide_index=True,
@@ -444,6 +445,7 @@ def show_daily_detail(account, nama, rules, file_bytes):
                     "Klasifikasi": st.column_config.TextColumn("Status", width="small"),
                     "Shift"      : st.column_config.TextColumn("Shift", width="large"),
                     "Jam Masuk"  : st.column_config.TextColumn("Jam Masuk", width="small"),
+                    "Jam Keluar" : st.column_config.TextColumn("Jam Keluar", width="small"),  # ← BARU
                     "Terlambat"  : st.column_config.TextColumn("Terlambat", width="small"),
                 },
             )
@@ -472,7 +474,7 @@ def show_daily_detail(account, nama, rules, file_bytes):
             total_jam = detail_df[detail_df["Tipe"] == tipe_key]["Jam Kerja"].sum()
             st.caption(f"{len(df_tipe)} hari  ·  Total jam kerja: {total_jam:.1f} jam")
             st.dataframe(
-                df_tipe[["No.", "Tanggal", "Shift", "Jam Masuk", "Klasifikasi", "Jam Kerja"]],
+                df_tipe[["No.", "Tanggal", "Shift", "Jam Masuk", "Jam Keluar", "Klasifikasi", "Jam Kerja"]],
                 use_container_width=True,
                 height=min(60 + len(df_tipe) * 35, 420),
                 hide_index=True,
@@ -481,6 +483,7 @@ def show_daily_detail(account, nama, rules, file_bytes):
                     "Tanggal"    : st.column_config.TextColumn("Tanggal", width="medium"),
                     "Shift"      : st.column_config.TextColumn("Shift", width="large"),
                     "Jam Masuk"  : st.column_config.TextColumn("Jam Masuk", width="small"),
+                    "Jam Keluar" : st.column_config.TextColumn("Jam Keluar", width="small"),  # ← BARU
                     "Klasifikasi": st.column_config.TextColumn("Klasifikasi", width="small"),
                     "Jam Kerja"  : st.column_config.TextColumn("Jam Kerja", width="small"),
                 },
@@ -502,7 +505,7 @@ def show_daily_detail(account, nama, rules, file_bytes):
             lambda x: f"{x:.1f} jam" if x > 0 else "—"
         )
         st.dataframe(
-            detail_display,
+            detail_display[["No.", "Tanggal", "Tipe", "Shift", "Jam Masuk", "Jam Keluar", "Status", "Klasifikasi", "Jam Kerja"]],
             use_container_width=True,
             height=420,
             hide_index=True,
@@ -512,6 +515,7 @@ def show_daily_detail(account, nama, rules, file_bytes):
                 "Tipe"       : st.column_config.TextColumn("Tipe", width="small"),
                 "Shift"      : st.column_config.TextColumn("Shift", width="large"),
                 "Jam Masuk"  : st.column_config.TextColumn("Jam Masuk", width="small"),
+                "Jam Keluar" : st.column_config.TextColumn("Jam Keluar", width="small"),  # ← BARU
                 "Status"     : st.column_config.TextColumn("Status Absensi", width="large"),
                 "Klasifikasi": st.column_config.TextColumn("Klasifikasi", width="small"),
                 "Jam Kerja"  : st.column_config.TextColumn("Jam Kerja", width="small"),
