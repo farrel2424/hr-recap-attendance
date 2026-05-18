@@ -10,8 +10,17 @@ import streamlit as st
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from datetime import time, datetime
 from database.db import init_db, save_periode, get_periodes, get_rekap, get_daily
+from classifiers import (
+    classify,
+    classify_str,
+    classify_shift_type,
+    parse_shift_start,
+    parse_time_to_minutes,
+    has_status,
+    SKIP_SHIFTS,
+    _NOT_PUNCHED,
+)
 
 # ──────────────────────────────────────────────────────────────
 # Konfigurasi Halaman
@@ -169,112 +178,6 @@ html, body, [class*="css"] {
 
 
 # ──────────────────────────────────────────────────────────────
-# Konstanta
-# ──────────────────────────────────────────────────────────────
-
-SKIP_SHIFTS     = {"Rest", "Not scheduled", "--", ""}
-K_THRESHOLD_MIN = 120  # 2 jam
-_NOT_PUNCHED    = {"not punched", "--", ""}
-
-# ──────────────────────────────────────────────────────────────
-# Helpers parse
-# ──────────────────────────────────────────────────────────────
-
-def parse_shift_start(shift_text):
-    if not isinstance(shift_text, str):
-        return None
-    s = shift_text.strip()
-    if s in SKIP_SHIFTS:
-        return None
-    m = re.search(r'(\d{1,2}):(\d{2})', s)
-    if m:
-        return int(m.group(1)) * 60 + int(m.group(2))
-    return None
-
-
-def parse_time_to_minutes(val):
-    if val is None:
-        return None
-    if isinstance(val, str):
-        v = val.strip()
-        if v.lower() in _NOT_PUNCHED:
-            return None
-        m = re.match(r'^(\d{1,2}):(\d{2})', v)
-        if m:
-            return int(m.group(1)) * 60 + int(m.group(2))
-        return None
-    if isinstance(val, time):
-        return val.hour * 60 + val.minute
-    if isinstance(val, (pd.Timestamp, datetime)):
-        return val.hour * 60 + val.minute
-    if isinstance(val, pd.Timedelta):
-        return (int(val.total_seconds()) % 86400) // 60
-    if isinstance(val, float):
-        if pd.isna(val):
-            return None
-        return round(val * 1440) % 1440
-    return None
-
-
-def _has_punch(val):
-    """True jika nilai punch bukan 'not punched' / '--' / kosong."""
-    return parse_time_to_minutes(val) is not None
-
-# ──────────────────────────────────────────────────────────────
-# Fungsi Klasifikasi Utama
-# ──────────────────────────────────────────────────────────────
-
-def classify(earliest_raw, shift_text, att_result, latest_raw=None, leave_app=None):
-    """
-    Kembalikan salah satu dari: Normal | Late | 1/2 UL | AL | 1/2 AL | WFA | None
-
-    Urutan pengecekan:
-    1. Cek Leave & Overtime Application secara langsung (tanpa perlu cek Attendance Results):
-       • WFH / WorkFromHome → WFA (langsung, tanpa syarat punch)
-       • AnnualLeave + ada punch in & out  → '1/2 AL'
-       • AnnualLeave + tidak ada punch      → 'AL'
-       • Leave jenis lain + att_result = "normal leave" → 'Normal'
-    2. Klasifikasi keterlambatan standar berdasarkan selisih jam masuk vs shift
-    """
-    att_lower   = str(att_result).strip().lower() if pd.notna(att_result) else ""
-    shift_start = parse_shift_start(shift_text)
-    shift_clean = str(shift_text).strip() if isinstance(shift_text, str) else ""
-    leave_str   = str(leave_app).strip() if (leave_app is not None and pd.notna(leave_app)) else ""
-
-    if shift_clean in SKIP_SHIFTS or shift_start is None:
-        return None
-
-    leave_lower = leave_str.lower()
-
-    # ── 1. Cek Leave & Overtime Application secara langsung ──────────
-    # WFH / WorkFromHome → selalu WFA, tanpa perlu cek Attendance Results
-    if "workfromhome" in leave_lower or "wfh" in leave_lower:
-        return "WFA"
-
-    # AnnualLeave
-    if "annualleave" in leave_lower:
-        has_in  = _has_punch(earliest_raw)
-        has_out = _has_punch(latest_raw)
-        return "1/2 AL" if (has_in and has_out) else "AL"
-
-    # Leave jenis lain yang muncul di att_result sebagai "normal leave" → Normal
-    if "normal" in att_lower and "leave" in att_lower:
-        return "Normal"
-
-    # ── 2. Klasifikasi Keterlambatan Standar ──────────────────────────
-    earliest = parse_time_to_minutes(earliest_raw)
-    if earliest is None:
-        return "Normal" if att_lower.startswith("normal") else None
-
-    diff = earliest - shift_start
-    if diff <= 0:
-        return "Normal"
-    elif diff <= K_THRESHOLD_MIN:
-        return "Late"
-    else:
-        return "1/2 UL"
-
-# ──────────────────────────────────────────────────────────────
 # Helpers: Rincian Harian
 # ──────────────────────────────────────────────────────────────
 
@@ -284,19 +187,6 @@ def parse_date_from_time(val):
     m = re.search(r'(\d{4}/\d{2}/\d{2})', val)
     return m.group(1) if m else val.strip()
 
-
-def classify_shift_type(shift_text):
-    if not isinstance(shift_text, str):
-        return None
-    s = shift_text.strip()
-    if s == "Rest":
-        return "H"
-    if s in ("", "--", "Not scheduled"):
-        return None
-    s_lower = s.lower()
-    if any(kw in s_lower for kw in ["s2", "night", "malam"]):
-        return "S2"
-    return "S1"
 
 
 @st.cache_data(show_spinner=False)
@@ -335,19 +225,25 @@ def get_employee_daily(file_bytes, account):
         if earliest_str in _NOT_PUNCHED and latest_str in _NOT_PUNCHED:
             tipe = "H"
 
+        # classify() sekarang return list atau None
+        _klas_raw = classify(
+            r["Earliest"], r["Shift"], r["Attendance results"],
+            latest_raw=r["Latest"],
+            leave_app=r.get("Leave & Overtime Application"),
+        )
+        # Display: gabung dengan " / " jika lebih dari satu status
+        _klas_display = " / ".join(_klas_raw) if _klas_raw else None
+
         rows.append({
-            "Tanggal"    : r["Tanggal"],
-            "Shift"      : str(r["Shift"]).strip(),
-            "Tipe"       : tipe,
-            "Jam Masuk"  : str(r["Earliest"]).strip() if pd.notna(r["Earliest"]) else "--",
-            "Jam Keluar" : str(r["Latest"]).strip() if pd.notna(r["Latest"]) else "--",
-            "Status"     : str(r["Attendance results"]).strip() if pd.notna(r["Attendance results"]) else "--",
-            "Jam Kerja"  : r["Jam Kerja"],
-            "Klasifikasi": classify(
-                r["Earliest"], r["Shift"], r["Attendance results"],
-                latest_raw=r["Latest"],
-                leave_app=r.get("Leave & Overtime Application"),
-            ),
+            "Tanggal"        : r["Tanggal"],
+            "Shift"          : str(r["Shift"]).strip(),
+            "Tipe"           : tipe,
+            "Jam Masuk"      : str(r["Earliest"]).strip() if pd.notna(r["Earliest"]) else "--",
+            "Jam Keluar"     : str(r["Latest"]).strip()   if pd.notna(r["Latest"])   else "--",
+            "Status"         : str(r["Attendance results"]).strip() if pd.notna(r["Attendance results"]) else "--",
+            "Jam Kerja"      : r["Jam Kerja"],
+            "Klasifikasi"    : _klas_display,   # string untuk tampilan
+            "Klasifikasi_raw": _klas_raw,        # list untuk filter
         })
 
     detail_df = pd.DataFrame(rows).sort_values("Tanggal").reset_index(drop=True)
@@ -385,7 +281,7 @@ def show_daily_detail(account, nama, rules, file_bytes):
     cols = st.columns(3)
     for i, tipe in enumerate(["S1", "S2", "H"]):
         row = summary_df[summary_df["Tipe"] == tipe]
-        hari = int(row["Hari"].values[0])       if len(row) else 0
+        hari = int(row["Hari"].values[0])        if len(row) else 0
         jam  = float(row["Total_Jam"].values[0]) if len(row) else 0.0
         icon, label, bg, border_c, text_c = tipe_cfg[tipe]
         with cols[i]:
@@ -416,22 +312,32 @@ def show_daily_detail(account, nama, rules, file_bytes):
 
     # Emoji map untuk semua status
     KLAS_EMOJI = {
-        "Normal": "✅ Normal",
-        "Late"  : "🟡 Late",
-        "1/2 UL": "🔴 1/2 UL",
-        "AL"    : "🟣 AL",
-        "1/2 AL": "🩷 ½AL",
-        "WFA"   : "🔵 WFA",
+        "Normal"   : "✅ Normal",
+        "Late"     : "🟡 Late",
+        "1/2 UL"   : "🔴 1/2 UL",
+        "AL"       : "🟣 AL",
+        "1/2 AL"   : "🩷 ½AL",
+        "WFA"      : "🔵 WFA",
     }
 
-    late_df = detail_df[detail_df["Klasifikasi"] == "Late"].copy()
-    k_df    = detail_df[detail_df["Klasifikasi"] == "1/2 UL"].copy()
-    al_df   = detail_df[detail_df["Klasifikasi"].isin(["AL", "1/2 AL"])].copy()
-    wfa_df  = detail_df[detail_df["Klasifikasi"] == "WFA"].copy()
-    n_late  = len(late_df)
-    n_k     = len(k_df)
-    n_al    = len(al_df)
-    n_wfa   = len(wfa_df)
+    # ── Filter pakai Klasifikasi_raw (list) ──────────────────
+    late_df = detail_df[detail_df["Klasifikasi_raw"].apply(
+        lambda x: has_status(x, "Late")
+    )].copy()
+    k_df    = detail_df[detail_df["Klasifikasi_raw"].apply(
+        lambda x: has_status(x, "1/2 UL")
+    )].copy()
+    al_df   = detail_df[detail_df["Klasifikasi_raw"].apply(
+        lambda x: has_status(x, "AL") or has_status(x, "1/2 AL")
+    )].copy()
+    wfa_df  = detail_df[detail_df["Klasifikasi_raw"].apply(
+        lambda x: has_status(x, "WFA")
+    )].copy()
+
+    n_late = len(late_df)
+    n_k    = len(k_df)
+    n_al   = len(al_df)
+    n_wfa  = len(wfa_df)
 
     # ── Expander 1: Keterlambatan ──
     late_label = f"⚠️ Rincian Keterlambatan  —  🟡 {n_late} Late  ·  🔴 {n_k} ½UL"
@@ -460,7 +366,7 @@ def show_daily_detail(account, nama, rules, file_bytes):
             combined = pd.concat([late_df, k_df]).sort_values("Tanggal").reset_index(drop=True)
             combined["No."]       = range(1, len(combined) + 1)
             combined["Terlambat"] = combined.apply(_menit_terlambat, axis=1)
-            combined["Klasifikasi"] = combined["Klasifikasi"].map(lambda x: KLAS_EMOJI.get(x, x) if x else "—")
+            combined["Klasifikasi"] = combined["Klasifikasi"].fillna("—")
             st.dataframe(
                 combined[["No.", "Tanggal", "Klasifikasi", "Shift", "Jam Masuk", "Jam Keluar", "Terlambat"]],
                 use_container_width=True,
@@ -475,12 +381,16 @@ def show_daily_detail(account, nama, rules, file_bytes):
             st.info("Tidak ada data AL / ½AL / WFA pada periode ini.")
         else:
             lc1, lc2, lc3 = st.columns(3)
-            n_full_al = len(detail_df[detail_df["Klasifikasi"] == "AL"])
-            n_half_al = len(detail_df[detail_df["Klasifikasi"] == "1/2 AL"])
+            n_full_al = len(detail_df[detail_df["Klasifikasi_raw"].apply(
+                lambda x: has_status(x, "AL")
+            )])
+            n_half_al = len(detail_df[detail_df["Klasifikasi_raw"].apply(
+                lambda x: has_status(x, "1/2 AL")
+            )])
             for (col, label, val, bg, bc, tc) in [
-                (lc1, "🟣 AL (Full)",   n_full_al, "#fdf4ff", "#a855f7", "#7e22ce"),
+                (lc1, "🟣 AL (Full)",      n_full_al, "#fdf4ff", "#a855f7", "#7e22ce"),
                 (lc2, "🩷 ½AL (Setengah)", n_half_al, "#fff1f2", "#fb7185", "#be123c"),
-                (lc3, "🔵 WFA",         n_wfa,     "#f0f9ff", "#0ea5e9", "#0369a1"),
+                (lc3, "🔵 WFA",            n_wfa,     "#f0f9ff", "#0ea5e9", "#0369a1"),
             ]:
                 with col:
                     st.markdown(f"""
@@ -492,8 +402,9 @@ def show_daily_detail(account, nama, rules, file_bytes):
 </div>""", unsafe_allow_html=True)
 
             leave_combined = pd.concat([al_df, wfa_df]).sort_values("Tanggal").reset_index(drop=True)
+            # Deduplikasi: satu hari bisa muncul di al_df dan wfa_df sekaligus (jika dual-count)
+            leave_combined = leave_combined.drop_duplicates(subset=["Tanggal"]).reset_index(drop=True)
             leave_combined["No."] = range(1, len(leave_combined) + 1)
-            leave_combined["Klasifikasi"] = leave_combined["Klasifikasi"].map(lambda x: KLAS_EMOJI.get(x, x) if x else "—")
             st.dataframe(
                 leave_combined[["No.", "Tanggal", "Klasifikasi", "Shift", "Jam Masuk", "Jam Keluar", "Status"]],
                 use_container_width=True,
@@ -520,9 +431,8 @@ def show_daily_detail(account, nama, rules, file_bytes):
             if df_tipe.empty:
                 st.info(f"Tidak ada data tipe {tipe_key} pada periode ini.")
                 return
-            df_tipe["No."]         = range(1, len(df_tipe) + 1)
-            df_tipe["Klasifikasi"] = df_tipe["Klasifikasi"].map(lambda x: KLAS_EMOJI.get(x, "—") if x else "—")
-            df_tipe["Jam Kerja"]   = df_tipe["Jam Kerja"].apply(lambda x: f"{x:.1f} jam" if x > 0 else "—")
+            df_tipe["No."]       = range(1, len(df_tipe) + 1)
+            df_tipe["Jam Kerja"] = df_tipe["Jam Kerja"].apply(lambda x: f"{x:.1f} jam" if x > 0 else "—")
             total_jam = detail_df[detail_df["Tipe"] == tipe_key]["Jam Kerja"].sum()
             st.caption(f"{len(df_tipe)} hari  ·  Total jam kerja: {total_jam:.1f} jam")
             st.dataframe(
@@ -540,9 +450,8 @@ def show_daily_detail(account, nama, rules, file_bytes):
     with st.expander(f"🗂️ Detail Lengkap per Hari  —  {len(detail_df)} hari tercatat", expanded=False):
         TIPE_EMOJI = {"S1": "🌅 S1", "S2": "🌙 S2", "H": "🏖️ H"}
         dd = detail_df.copy()
-        dd["Tipe"]        = dd["Tipe"].map(lambda x: TIPE_EMOJI.get(x, x))
-        dd["Klasifikasi"] = dd["Klasifikasi"].map(lambda x: KLAS_EMOJI.get(x, "—") if x else "—")
-        dd["Jam Kerja"]   = dd["Jam Kerja"].apply(lambda x: f"{x:.1f} jam" if x > 0 else "—")
+        dd["Tipe"]      = dd["Tipe"].map(lambda x: TIPE_EMOJI.get(x, x))
+        dd["Jam Kerja"] = dd["Jam Kerja"].apply(lambda x: f"{x:.1f} jam" if x > 0 else "—")
         st.dataframe(
             dd[["No.", "Tanggal", "Tipe", "Shift", "Jam Masuk", "Jam Keluar", "Status", "Klasifikasi", "Jam Kerja"]],
             use_container_width=True,
@@ -579,7 +488,8 @@ def process_file(file_bytes):
     df = df[required].dropna(subset=["Account", "Rules"])
     df = df[~df["Account"].astype(str).str.strip().isin(["", "--"])]
 
-    df["Status"] = df.apply(
+    # classify() sekarang return list — simpan ke _statuses
+    df["_statuses"] = df.apply(
         lambda r: classify(
             r["Earliest"], r["Shift"], r["Attendance results"],
             latest_raw=r["Latest"],
@@ -595,8 +505,13 @@ def process_file(file_bytes):
         .reset_index()
     )
 
-    classified = df[df["Status"].notna()]
-    pivot = classified.pivot_table(
+    # Baris yang punya klasifikasi (sebelum explode, untuk stats)
+    df_classified = df[df["_statuses"].notna()].copy()
+
+    # Explode list → setiap status jadi baris sendiri, lalu pivot
+    df_exploded = df_classified.explode("_statuses").rename(columns={"_statuses": "Status"})
+
+    pivot = df_exploded.pivot_table(
         index="Account",
         columns="Status",
         values="Shift",
@@ -618,17 +533,16 @@ def process_file(file_bytes):
     pivot["Nama"] = pivot["Account"].map(name_map)
 
     pivot = pivot.sort_values(["Rules", "Nama"]).reset_index(drop=True)
-    # No. hanya untuk ekspor Excel; tampilan UI menggunakan index 1-based
     pivot.insert(0, "No.", range(1, len(pivot) + 1))
     result = pivot[["No.", "Nama", "Account", "Rules",
                     "Normal", "Late", "1/2 UL", "AL", "1/2 AL", "WFA"]].copy()
 
     stats = {
         "total_rows": len(df),
-        "classified": len(classified),
-        "skipped": len(df) - len(classified),
-        "employees": len(result),
-        "dist": df["Status"].value_counts(dropna=False).to_dict(),
+        "classified": len(df_classified),
+        "skipped"   : len(df) - len(df_classified),
+        "employees" : len(result),
+        "dist"      : df_exploded["Status"].value_counts(dropna=False).to_dict(),
     }
     return result, stats
 
@@ -685,14 +599,13 @@ def to_excel_bytes(df, time_range=""):
         c.border    = BORDER
     ws.row_dimensions[3].height = 20
 
-    # Column style map (col_index → (fill_if_positive, font_color_positive))
     col_style = {
-        5:  (GREEN,  "166534"),   # Normal
-        6:  (YELLOW, "92400E"),   # Late
-        7:  (RED,    "991B1B"),   # K
-        8:  (PURPLE, "7E22CE"),   # AL
-        9:  (PINK,   "BE123C"),   # 1/2 AL
-        10: (CYAN,   "0369A1"),   # WFA
+        5:  (GREEN,  "166534"),
+        6:  (YELLOW, "92400E"),
+        7:  (RED,    "991B1B"),
+        8:  (PURPLE, "7E22CE"),
+        9:  (PINK,   "BE123C"),
+        10: (CYAN,   "0369A1"),
     }
 
     for ri, (_, row) in enumerate(df.iterrows()):
@@ -736,7 +649,7 @@ def to_excel_bytes(df, time_range=""):
     for ci, w in enumerate([6, 32, 24, 28, 10, 10, 8, 8, 8, 8], 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
 
-    ws.freeze_panes   = "A4"
+    ws.freeze_panes    = "A4"
     ws.auto_filter.ref = f"A3:J{tr-1}"
 
     buf = io.BytesIO()
@@ -779,15 +692,17 @@ with col_info:
     st.markdown("""
 <div class="info-box">
 <strong>Logic Klasifikasi:</strong><br>
-✅ <strong>Normal</strong> — tepat waktu / lebih awal<br>
+✅ <strong>Normal</strong> — tepat waktu / att results mengandung "Normal"<br>
 🟡 <strong>Late</strong> — terlambat ≤ 2 jam<br>
 🔴 <strong>½UL</strong> — terlambat &gt; 2 jam<br>
 🟣 <strong>AL</strong> — Annual Leave (tanpa punch)<br>
 🩷 <strong>½AL</strong> — Annual Leave (ada punch in &amp; out)<br>
-🔵 <strong>WFA</strong> — Work From Home (kolom Leave = WFH)<br><br>
+🔵 <strong>WFA</strong> — Work From Home (ada punch in &amp; out)<br><br>
+<strong>Dual-count:</strong><br>
+• Normal (Leave) + WFH + punch → Normal <em>dan</em> WFA<br>
+• Normal (Leave) + AnnualLeave → Normal <em>dan</em> AL/½AL<br><br>
 <strong>Catatan:</strong><br>
-• ½UL tidak double-count ke Late<br>
-• WFH langsung → WFA (tanpa cek Attendance Results)<br>
+• WFH tanpa punch → Normal saja<br>
 • Shift Rest/Not scheduled → dilewati
 </div>
 """, unsafe_allow_html=True)
@@ -825,8 +740,9 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
             df_raw = df_raw.dropna(subset=["Account", "Rules"])
             df_raw = df_raw[~df_raw["Account"].astype(str).str.strip().isin(["", "--"])]
             df_raw["_tipe_shift"] = df_raw["Shift"].apply(classify_shift_type)
+            # classify_str() → join list jadi string untuk DB
             df_raw["_status_klasifikasi"] = df_raw.apply(
-                lambda r: classify(
+                lambda r: classify_str(
                     r["Earliest"], r["Shift"], r["Attendance results"],
                     latest_raw=r["Latest"],
                     leave_app=r.get("Leave & Overtime Application"),
@@ -857,7 +773,7 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
     # ── Metric Cards ──
     total_n   = int(df_result["Normal"].sum())
     total_l   = int(df_result["Late"].sum())
-    total_hul   = int(df_result["1/2 UL"].sum())
+    total_k   = int(df_result["1/2 UL"].sum())
     total_al  = int(df_result["AL"].sum())
     total_hal = int(df_result["1/2 AL"].sum())
     total_wfa = int(df_result["WFA"].sum())
@@ -875,7 +791,7 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
   </div>
   <div class="metric-card metric-k">
     <div class="label">½ UL (&gt;2 jam)</div>
-    <div class="value">{total_hul:,}</div>
+    <div class="value">{total_k:,}</div>
   </div>
   <div class="metric-card metric-al">
     <div class="label">Annual Leave (AL)</div>
@@ -920,22 +836,19 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
     if show_late_only:
         df_show = df_show[(df_show["Late"] > 0) | (df_show["1/2 UL"] > 0)]
 
-    # ── Tampilkan tabel TANPA kolom No. — gunakan index 1-based ──────
-    # Kolom No. tetap ada di df_show untuk keperluan ekspor Excel,
-    # tetapi tampilan UI menggunakan index DataFrame sehingga nomor
-    # selalu urut 1, 2, 3… meski user melakukan sort asc/desc.
-    df_display = df_show.drop(columns=["No."]).copy()
-    df_display.index = range(1, len(df_display) + 1)
+    df_show = df_show.copy()
+    df_show["No."] = range(1, len(df_show) + 1)
 
     st.caption("💡 **Klik baris karyawan** untuk melihat rincian harian & tanggal keterlambatan")
     sel_event = st.dataframe(
-        df_display,
+        df_show,
         use_container_width=True,
         height=520,
-        hide_index=False,
+        hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
         column_config={
+            "No."    : st.column_config.NumberColumn("No.", width="small"),
             "Nama"   : st.column_config.TextColumn("Nama", width="large"),
             "Account": st.column_config.TextColumn("Account", width="medium"),
             "Rules"  : st.column_config.TextColumn("Rules", width="medium"),
@@ -1015,8 +928,8 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
             WFA=("WFA", "sum"),
         ).reset_index().sort_values("1/2 UL", ascending=False)
         total_absen = grp["Normal"] + grp["Late"] + grp["1/2 UL"]
-        grp["Late Rate"]   = (grp["Late"]    / total_absen * 100).round(1)
-        grp["½UL Rate"]    = (grp["1/2 UL"]  / total_absen * 100).round(1)
+        grp["Late Rate"] = (grp["Late"]   / total_absen * 100).round(1)
+        grp["½UL Rate"]  = (grp["1/2 UL"] / total_absen * 100).round(1)
         st.dataframe(
             grp,
             use_container_width=True,
