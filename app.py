@@ -690,21 +690,69 @@ with col_up:
 
 with col_info:
     st.markdown("""
-<div class="info-box">
-<strong>Logic Klasifikasi:</strong><br>
-✅ <strong>Normal</strong> — tepat waktu / att results mengandung "Normal"<br>
-🟡 <strong>Late</strong> — terlambat ≤ 2 jam<br>
-🔴 <strong>½UL</strong> — terlambat &gt; 2 jam<br>
-🟣 <strong>AL</strong> — Annual Leave (tanpa punch)<br>
-🩷 <strong>½AL</strong> — Annual Leave (ada punch in &amp; out)<br>
-🔵 <strong>WFA</strong> — Work From Home (ada punch in &amp; out)<br><br>
-<strong>Dual-count:</strong><br>
-• Normal (Leave) + WFH + punch → Normal <em>dan</em> WFA<br>
-• Normal (Leave) + AnnualLeave → Normal <em>dan</em> AL/½AL<br><br>
-<strong>Catatan:</strong><br>
-• WFH tanpa punch → Normal saja<br>
-• Shift Rest/Not scheduled → dilewati
+<details style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:0.8rem 1.2rem;cursor:pointer;">
+<summary style="font-size:0.88rem;font-weight:700;color:#1e293b;list-style:none;display:flex;align-items:center;gap:0.5rem;user-select:none;">
+  <span>📋 Logic Klasifikasi</span>
+  <span style="margin-left:auto;font-size:0.75rem;color:#94a3b8;font-weight:400;">klik untuk expand</span>
+</summary>
+<div style="margin-top:1rem;font-size:0.85rem;color:#334155;line-height:1.9;">
+
+  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">🏷️ Status Utama</div>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:1rem;">
+    <tr style="background:#f1f5f9;">
+      <td style="padding:0.35rem 0.6rem;border-radius:6px 0 0 6px;font-weight:600;white-space:nowrap;">✅ Normal</td>
+      <td style="padding:0.35rem 0.6rem;">Att Results mengandung kata <code>"Normal"</code>, atau jam masuk ≤ jam mulai shift</td>
+    </tr>
+    <tr>
+      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🟡 Late</td>
+      <td style="padding:0.35rem 0.6rem;">Att Results <b>tidak</b> mengandung "Normal", terlambat <b>≤ 2 jam</b> dari shift</td>
+    </tr>
+    <tr style="background:#f1f5f9;">
+      <td style="padding:0.35rem 0.6rem;border-radius:6px 0 0 6px;font-weight:600;white-space:nowrap;">🔴 ½UL</td>
+      <td style="padding:0.35rem 0.6rem;">Att Results <b>tidak</b> mengandung "Normal", terlambat <b>&gt; 2 jam</b> dari shift</td>
+    </tr>
+    <tr>
+      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🟣 AL</td>
+      <td style="padding:0.35rem 0.6rem;">Leave = <code>AnnualLeave</code> + Att Results mengandung "Normal" + <b>tidak ada punch</b> sama sekali</td>
+    </tr>
+    <tr style="background:#f1f5f9;">
+      <td style="padding:0.35rem 0.6rem;border-radius:6px 0 0 6px;font-weight:600;white-space:nowrap;">🩷 ½AL</td>
+      <td style="padding:0.35rem 0.6rem;">Leave = <code>AnnualLeave</code> + Att Results mengandung "Normal" + <b>ada punch in &amp; out</b></td>
+    </tr>
+    <tr>
+      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🔵 WFA</td>
+      <td style="padding:0.35rem 0.6rem;">Leave mengandung <code>WFH</code> / <code>WorkFromHome</code> + Att Results mengandung "Normal"</td>
+    </tr>
+  </table>
+
+  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">🔀 Alur Keputusan</div>
+  <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:0.7rem 1rem;font-family:'DM Mono',monospace;font-size:0.78rem;line-height:2;margin-bottom:1rem;color:#475569;">
+    Att Results mengandung "Normal"?<br>
+    &nbsp;├─ Ya + Leave = AnnualLeave → <b>Normal + AL</b> atau <b>Normal + ½AL</b><br>
+    &nbsp;├─ Ya + Leave = WFH/WorkFromHome → <b>Normal + WFA</b><br>
+    &nbsp;└─ Ya (lainnya) → <b>Normal</b><br>
+    Att Results TIDAK mengandung "Normal"?<br>
+    &nbsp;├─ Terlambat ≤ 2 jam → <b>Late</b><br>
+    &nbsp;├─ Terlambat &gt; 2 jam → <b>½UL</b><br>
+    &nbsp;└─ Tidak ada punch → <i>diabaikan</i>
+  </div>
+
+  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">🔁 Dual-Count</div>
+  <div style="background:#eff6ff;border-radius:8px;padding:0.6rem 1rem;margin-bottom:1rem;font-size:0.82rem;border-left:3px solid #3b82f6;">
+    Satu hari bisa menghasilkan <b>2 status sekaligus</b>:<br>
+    • Normal (Leave) + WFH → dihitung sebagai <b>Normal</b> dan <b>WFA</b><br>
+    • Normal (Leave) + AnnualLeave + ada punch → dihitung sebagai <b>Normal</b> dan <b>½AL</b><br>
+    • Normal (Leave) + AnnualLeave + tanpa punch → dihitung sebagai <b>Normal</b> dan <b>AL</b>
+  </div>
+
+  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">⚠️ Pengecualian</div>
+  <div style="background:#fef9ec;border-radius:8px;padding:0.6rem 1rem;font-size:0.82rem;border-left:3px solid #f59e0b;">
+    • Shift <code>Rest</code> / <code>Not scheduled</code> / <code>--</code> / kosong → <b>dilewati</b>, tidak dihitung<br>
+    • Tidak ada punch in → Late/½UL tidak bisa dihitung → <b>diabaikan</b>
+  </div>
+
 </div>
+</details>
 """, unsafe_allow_html=True)
 
 # ── Proses ──
