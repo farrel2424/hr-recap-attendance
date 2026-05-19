@@ -23,29 +23,29 @@ Flow (Urutan Prioritas):
        ├─ leave = AnnualLeave → AL / ½AL                       ["Normal","AL"] / ["Normal","1/2 AL"]
        └─ leave = WFH / WorkFromHome → WFA                     ["Normal","WFA"]
 
-  6. [SUMBER A] Keterlambatan Punch In vs shift start
-     Berlaku tanpa memandang att_result; dicek setelah Off/DW/K/AL/WFA
-       ├─ terlambat 1–120 mnt  → Late                          ["Late"]    (standalone)
-       └─ terlambat  > 120 mnt → 1/2 UL                       ["1/2 UL"]  (standalone)
+  6a. [SUMBER A] Keterlambatan Punch In vs shift start
+      Berlaku tanpa memandang att_result; dicek setelah Off/DW/K/AL/WFA
+        ├─ terlambat 1–120 mnt  → Late                         ["Late"]    (standalone)
+        └─ terlambat  > 120 mnt → 1/2 UL                      ["1/2 UL"]  (standalone)
+
+  6b. [SUMBER B] Kepulangan Lebih Awal — Punch Out vs shift end
+      Hanya berjalan jika langkah 6a tidak menghasilkan klasifikasi
+      (artinya punch in tepat waktu / lebih awal).
+        ├─ lebih awal  1–120 mnt dari shift end → Late         ["Late"]    (standalone)
+        └─ lebih awal  > 120 mnt dari shift end → 1/2 UL      ["1/2 UL"]  (standalone)
 
   7. att_result mengandung "normal" + tidak ada keterlambatan
        → Normal                                                ["Normal"]
 
-  8. [SUMBER B] att_result TIDAK mengandung "normal" + Punch In tepat/lebih awal
-     Berdasarkan Punch Out vs shift end:
-       hanya satu punch            → ["1/2 UL"]
-       tidak ada punch             → None
-       punch-out lebih cepat >2j   → ["1/2 UL"]
-       punch-out lebih cepat ≤2j   → ["Late"]
-       punch-out tepat/lebih lama  → ["Normal"]
+  8. Selain itu → tidak diklasifikasi (None)
 """
 
 import pandas as pd
 
 from .base         import parse_shift_start, parse_shift_end, SKIP_SHIFTS
 from .normal       import classify as _classify_normal
-from .late         import classify as _classify_late
 from .late_in      import classify as _classify_late_in
+from .late_out     import classify as _classify_late_out
 from .annual_leave import classify as _classify_annual_leave
 from .wfa          import classify as _classify_wfa
 from .dw           import classify as _classify_dw
@@ -113,18 +113,28 @@ def classify(
         if "workfromhome" in leave_lower or "wfh" in leave_lower:
             return _classify_wfa(earliest_raw, latest_raw)
 
-    # ── 6. Keterlambatan Punch In — berlaku tanpa memandang att_result ───────
+    # ── 6a. Keterlambatan Punch In — berlaku tanpa memandang att_result ──────
     #   1–120 mnt terlambat → ["Late"]
     #   > 120 mnt terlambat → ["1/2 UL"]
     late_in = _classify_late_in(earliest_raw, shift_start)
     if late_in:
         return late_in      # ["Late"] atau ["1/2 UL"] — tanpa prefix "Normal"
 
+    # ── 6b. Kepulangan Lebih Awal — Punch Out vs shift end ───────────────────
+    #   Hanya berjalan jika punch in tepat waktu / lebih awal (6a = None).
+    #   1–120 mnt lebih awal dari shift end  → ["Late"]
+    #   > 120 mnt lebih awal dari shift end  → ["1/2 UL"]
+    shift_end = parse_shift_end(shift_text)
+    if shift_end is not None:
+        late_out = _classify_late_out(latest_raw, shift_end, shift_start)
+        if late_out:
+            return late_out  # ["Late"] atau ["1/2 UL"] — standalone
+
     # ── 7. Normal ───────────────────────────────────────────────────────────
     if "normal" in att_lower:
         return _classify_normal()
 
-    # ── 8. Punch In tepat/lebih awal tapi att tidak normal → tidak terdefinisi
+    # ── 8. Tidak diklasifikasi ───────────────────────────────────────────────
     return None
 
 
