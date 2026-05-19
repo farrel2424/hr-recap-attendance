@@ -49,7 +49,7 @@ html, body, [class*="css"] {
 
 .main .block-container {
     padding: 2rem 3rem 4rem;
-    max-width: 1300px;
+    max-width: 1400px;
 }
 
 .app-header {
@@ -95,19 +95,32 @@ html, body, [class*="css"] {
     letter-spacing: 0.05em;
 }
 
+/* ── Metric Grid — 5 kolom × 2 baris, jarak lebih lega ── */
 .metric-row {
-    display: flex;
-    gap: 1rem;
-    margin: 1.5rem 0;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1.25rem;
+    margin: 2rem 0 2.5rem;
 }
 .metric-card {
-    flex: 1;
-    min-width: 110px;
-    border-radius: 12px;
-    padding: 1.2rem 1.5rem;
+    border-radius: 14px;
+    padding: 1.5rem 1.75rem 1.4rem;
     font-weight: 600;
+    position: relative;
+    overflow: hidden;
 }
+.metric-card::after {
+    content: '';
+    position: absolute;
+    bottom: -18px;
+    right: -18px;
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    opacity: 0.07;
+    background: currentColor;
+}
+
 .metric-normal  { background: #f0fdf4; border-left: 4px solid #22c55e; }
 .metric-late    { background: #fffbeb; border-left: 4px solid #f59e0b; }
 .metric-k       { background: #fef2f2; border-left: 4px solid #ef4444; }
@@ -119,8 +132,20 @@ html, body, [class*="css"] {
 .metric-ksick   { background: #fdf2f8; border-left: 4px solid #ec4899; }
 .metric-off     { background: #f8fafc; border-left: 4px solid #94a3b8; }
 
-.metric-card .label { font-size: 0.78rem; color: #64748b; font-weight: 500; text-transform: uppercase; letter-spacing: 0.07em; }
-.metric-card .value { font-size: 2rem; font-weight: 700; margin-top: 0.2rem; font-family: 'DM Mono', monospace; }
+.metric-card .label {
+    font-size: 0.75rem;
+    color: #64748b;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 0.5rem;
+}
+.metric-card .value {
+    font-size: 2.2rem;
+    font-weight: 700;
+    font-family: 'DM Mono', monospace;
+    line-height: 1;
+}
 .metric-normal  .value { color: #16a34a; }
 .metric-late    .value { color: #d97706; }
 .metric-k       .value { color: #dc2626; }
@@ -131,6 +156,13 @@ html, body, [class*="css"] {
 .metric-dw      .value { color: #ea580c; }
 .metric-ksick   .value { color: #db2777; }
 .metric-off     .value { color: #64748b; }
+
+.metric-card .sub {
+    font-size: 0.72rem;
+    color: #94a3b8;
+    font-weight: 400;
+    margin-top: 0.35rem;
+}
 
 .rules-pill {
     display: inline-block;
@@ -177,6 +209,23 @@ html, body, [class*="css"] {
     color: #1e40af;
     border: 1px solid #bfdbfe;
     line-height: 1.7;
+}
+
+/* Tag kolom yang ditampilkan */
+.col-tag {
+    display: inline-block;
+    background: #e0f2fe;
+    color: #0369a1;
+    border-radius: 6px;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.73rem;
+    font-family: 'DM Mono', monospace;
+    font-weight: 600;
+    margin: 0.15rem;
+}
+.col-tag-opt {
+    background: #f1f5f9;
+    color: #475569;
 }
 
 .streamlit-expanderHeader { font-weight: 600 !important; }
@@ -311,7 +360,6 @@ def show_daily_detail(account, nama, rules, file_bytes):
         jam_keluar = parse_time_to_minutes(row["Jam Keluar"])
         if s_end is None or jam_keluar is None:
             return "--"
-        # Normalisasi overnight
         if s_start is not None and s_end < s_start:
             s_end += 1440
             if jam_keluar < s_start:
@@ -564,7 +612,6 @@ def process_file(file_bytes):
     ).reset_index()
     pivot.columns.name = None
 
-    # Pastikan semua kolom status ada (termasuk yang baru)
     for col in ["Normal", "Late", "1/2 UL", "AL", "1/2 AL", "WFA", "DW", "K", "Off"]:
         if col not in pivot.columns:
             pivot[col] = 0
@@ -620,7 +667,6 @@ def to_excel_bytes(df, time_range=""):
     CENTER = Alignment(horizontal="center", vertical="center")
     LEFT   = Alignment(horizontal="left",   vertical="center")
 
-    # Title
     ws.merge_cells("A1:M1")
     ws["A1"] = "Summary Attendance"
     ws["A1"].font      = Font(name="Calibri", bold=True, color="FFFFFF", size=14)
@@ -628,7 +674,6 @@ def to_excel_bytes(df, time_range=""):
     ws["A1"].alignment = CENTER
     ws.row_dimensions[1].height = 30
 
-    # Subtitle
     ws.merge_cells("A2:M2")
     ws["A2"] = f"Time Range: {time_range}" if time_range else "Rekap Absensi"
     ws["A2"].font      = Font(name="Calibri", color="FFFFFF", size=9, italic=True)
@@ -636,7 +681,6 @@ def to_excel_bytes(df, time_range=""):
     ws["A2"].alignment = CENTER
     ws.row_dimensions[2].height = 16
 
-    # Header
     headers = ["No.", "Nama", "Account", "Rules",
                "Normal", "Late", "1/2 UL", "AL", "1/2 AL", "WFA",
                "DW", "K", "Off"]
@@ -683,7 +727,6 @@ def to_excel_bytes(df, time_range=""):
                 c.alignment = CENTER
         ws.row_dimensions[er].height = 17
 
-    # Total row
     tr = len(df) + 4
     ws.merge_cells(f"A{tr}:D{tr}")
     ws[f"A{tr}"]           = "TOTAL"
@@ -708,6 +751,42 @@ def to_excel_bytes(df, time_range=""):
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+# ──────────────────────────────────────────────────────────────
+# Definisi kolom — inti vs opsional
+# ──────────────────────────────────────────────────────────────
+
+# Kolom yang SELALU tampil
+CORE_COLS = ["No.", "Nama", "Account", "Rules", "Normal", "Late", "1/2 UL", "DW"]
+# Kolom yang bisa di-toggle
+OPTIONAL_COLS_DEF = [
+    ("K",     "K 🩺",   "Sakit dgn Surat"),
+    ("AL",    "AL 🟣",  "Annual Leave penuh"),
+    ("1/2 AL","½AL 🩷", "Annual Leave ½ hari"),
+    ("WFA",   "WFA 🔵", "Work From Anywhere"),
+    ("Off",   "Off ⬜", "Rest / Not scheduled"),
+]
+OPTIONAL_KEYS   = [c[0] for c in OPTIONAL_COLS_DEF]
+OPTIONAL_LABELS = {c[0]: c[1] for c in OPTIONAL_COLS_DEF}
+OPTIONAL_DESCS  = {c[0]: c[2] for c in OPTIONAL_COLS_DEF}
+
+# column_config lengkap (dipakai saat render tabel)
+COL_CONFIG_ALL = {
+    "No."    : st.column_config.NumberColumn("No.", width="small"),
+    "Nama"   : st.column_config.TextColumn("Nama", width="large"),
+    "Account": st.column_config.TextColumn("Account", width="medium"),
+    "Rules"  : st.column_config.TextColumn("Rules", width="medium"),
+    "Normal" : st.column_config.NumberColumn("Normal ✅", format="%d", width="small"),
+    "Late"   : st.column_config.NumberColumn("Late 🟡",  format="%d", width="small"),
+    "1/2 UL" : st.column_config.NumberColumn("½UL 🔴",   format="%d", width="small"),
+    "DW"     : st.column_config.NumberColumn("DW 🟠",    format="%d", width="small"),
+    "K"      : st.column_config.NumberColumn("K 🩺",     format="%d", width="small"),
+    "AL"     : st.column_config.NumberColumn("AL 🟣",    format="%d", width="small"),
+    "1/2 AL" : st.column_config.NumberColumn("½AL 🩷",   format="%d", width="small"),
+    "WFA"    : st.column_config.NumberColumn("WFA 🔵",   format="%d", width="small"),
+    "Off"    : st.column_config.NumberColumn("Off ⬜",   format="%d", width="small"),
+}
 
 
 # ──────────────────────────────────────────────────────────────
@@ -754,84 +833,109 @@ with col_info:
   <table style="width:100%;border-collapse:collapse;margin-bottom:1rem;">
     <tr style="background:#f1f5f9;">
       <td style="padding:0.35rem 0.6rem;border-radius:6px 0 0 6px;font-weight:600;white-space:nowrap;">✅ Normal</td>
-      <td style="padding:0.35rem 0.6rem;">Att Results mengandung kata <code>"Normal"</code> (bukan rest/not-scheduled), dan tidak ada kondisi khusus leave</td>
+      <td style="padding:0.35rem 0.6rem;">Att Results mengandung <code>"normal"</code>, bukan <em>rest</em>/<em>not scheduled</em>, dan tidak ada kondisi leave khusus</td>
     </tr>
     <tr>
       <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🟡 Late</td>
-      <td style="padding:0.35rem 0.6rem;">Att Results <b>tidak</b> mengandung "Normal" + Punch Out lebih cepat <b>≤ 2 jam</b> dari jam selesai shift</td>
+      <td style="padding:0.35rem 0.6rem;">
+        <b>Sumber A — Punch In terlambat</b> (att normal, bukan AL/WFA/K):<br>
+        &nbsp;&nbsp;Punch In lebih lambat <b>1–120 menit</b> dari jam mulai shift → <b>Normal + Late</b><br>
+        <b>Sumber B — Punch Out lebih awal</b> (att tidak normal):<br>
+        &nbsp;&nbsp;ada dua punch + Punch Out lebih awal <b>≤ 120 menit</b> dari jam selesai shift → <b>Late</b>
+      </td>
     </tr>
     <tr style="background:#f1f5f9;">
       <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🔴 ½UL</td>
-      <td style="padding:0.35rem 0.6rem;">Att Results <b>tidak</b> mengandung "Normal" + <b>salah satu dari:</b> (a) Punch Out lebih cepat <b>&gt; 2 jam</b> dari jadwal, atau (b) hanya ada satu punch (in tanpa out, atau out tanpa in)</td>
+      <td style="padding:0.35rem 0.6rem;">
+        <b>Sumber A — Punch In terlambat</b> (att normal, bukan AL/WFA/K):<br>
+        &nbsp;&nbsp;Punch In lebih lambat <b>&gt; 120 menit</b> dari jam mulai shift → <b>Normal + ½UL</b><br>
+        <b>Sumber B — Punch Out lebih awal / satu punch</b> (att tidak normal):<br>
+        &nbsp;&nbsp;(a) hanya <b>satu punch</b> (in tanpa out atau out tanpa in), <b>atau</b><br>
+        &nbsp;&nbsp;(b) Punch Out lebih awal <b>&gt; 120 menit</b> dari jadwal selesai shift → <b>½UL</b>
+      </td>
     </tr>
     <tr>
       <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🟠 DW</td>
-      <td style="padding:0.35rem 0.6rem;">Att Results mengandung kata <code>"Absence"</code></td>
+      <td style="padding:0.35rem 0.6rem;">Att Results mengandung kata <code>"Absence"</code> (tidak hadir sama sekali)</td>
     </tr>
     <tr style="background:#f1f5f9;">
       <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🩺 K</td>
-      <td style="padding:0.35rem 0.6rem;">Leave mengandung <code>"K-Sick W Letter"</code>. Jika att juga Normal → dual-count <b>Normal + K</b></td>
+      <td style="padding:0.35rem 0.6rem;">Leave mengandung <code>"K-Sick W Letter"</code>. Dicek <em>sebelum</em> Normal agar tidak tertimpa AL/WFA.<br>
+        Jika att juga normal → <b>dual-count: Normal + K</b>; jika tidak → <b>K</b> saja</td>
     </tr>
     <tr>
       <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">⬜ Off</td>
-      <td style="padding:0.35rem 0.6rem;">Att Results bernilai tepat <code>"Normal (rest)"</code> atau <code>"Normal (not scheduled)"</code></td>
+      <td style="padding:0.35rem 0.6rem;">Att Results bernilai <em>tepat</em> <code>"Normal (rest)"</code> atau <code>"Normal (not scheduled)"</code> — dicek <b>paling awal</b>, sebelum logika lainnya</td>
     </tr>
     <tr style="background:#f1f5f9;">
       <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🟣 AL</td>
-      <td style="padding:0.35rem 0.6rem;">Leave = <code>AnnualLeave</code> + Att Normal + <b>tidak ada punch</b> sama sekali</td>
+      <td style="padding:0.35rem 0.6rem;">Leave = <code>AnnualLeave</code> + Att normal + <b>tidak ada punch</b> sama sekali → <b>Normal + AL</b></td>
     </tr>
     <tr>
       <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🩷 ½AL</td>
-      <td style="padding:0.35rem 0.6rem;">Leave = <code>AnnualLeave</code> + Att Normal + <b>ada punch in &amp; out</b></td>
+      <td style="padding:0.35rem 0.6rem;">Leave = <code>AnnualLeave</code> + Att normal + <b>ada punch in &amp; out</b> → <b>Normal + ½AL</b></td>
     </tr>
     <tr style="background:#f1f5f9;">
       <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🔵 WFA</td>
-      <td style="padding:0.35rem 0.6rem;">Leave mengandung <code>WFH</code> / <code>WorkFromHome</code> + Att Normal</td>
+      <td style="padding:0.35rem 0.6rem;">Leave mengandung <code>"WorkFromHome"</code> / <code>"WFH"</code> + Att normal → selalu <b>Normal + WFA</b></td>
     </tr>
   </table>
 
-  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">🔀 Alur Keputusan</div>
+  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">🔀 Alur Keputusan (Urutan Prioritas)</div>
   <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:0.7rem 1rem;font-family:'DM Mono',monospace;font-size:0.78rem;line-height:2;margin-bottom:1rem;color:#475569;">
-    Att = "Normal (rest)" / "Normal (not scheduled)"? → <b>Off</b><br>
-    Att mengandung "Absence"? → <b>DW</b><br>
-    Leave mengandung "K-Sick W Letter"?<br>
-    &nbsp;├─ Att juga Normal → <b>Normal + K</b><br>
-    &nbsp;└─ Att tidak Normal → <b>K</b><br>
-    Att mengandung "Normal" (lainnya)?<br>
-    &nbsp;├─ Leave = AnnualLeave → <b>Normal + AL</b> / <b>Normal + ½AL</b><br>
-    &nbsp;├─ Leave = WFH/WorkFromHome → <b>Normal + WFA</b><br>
-    &nbsp;└─ Leave lain / tanpa leave → <b>Normal</b><br>
-    Att TIDAK mengandung "Normal" (Early Departure, Missed Punch, dll)?<br>
-    &nbsp;├─ Hanya satu punch → <b>½UL</b><br>
-    &nbsp;├─ Tidak ada punch → <i>diabaikan</i><br>
-    &nbsp;├─ Punch Out lebih awal &gt; 2 jam → <b>½UL</b><br>
-    &nbsp;├─ Punch Out lebih awal ≤ 2 jam → <b>Late</b><br>
-    &nbsp;└─ Punch Out tepat/lewat jadwal → <b>Normal</b>
+    1. Att = "Normal (rest)" / "Normal (not scheduled)"? → <b>Off</b> — selesai<br>
+    2. Shift = Rest / Not scheduled / kosong / "--"? → <b>dilewati</b> (None)<br>
+    3. Att mengandung "Absence"? → <b>DW</b> — selesai<br>
+    4. Leave mengandung "K-Sick W Letter"?<br>
+    &nbsp;&nbsp;&nbsp;├─ Att juga mengandung "normal" → <b>Normal + K</b><br>
+    &nbsp;&nbsp;&nbsp;└─ Att tidak mengandung "normal" → <b>K</b><br>
+    5. Att mengandung "normal"?<br>
+    &nbsp;&nbsp;&nbsp;├─ Leave = AnnualLeave + tidak ada punch → <b>Normal + AL</b><br>
+    &nbsp;&nbsp;&nbsp;├─ Leave = AnnualLeave + ada kedua punch → <b>Normal + ½AL</b><br>
+    &nbsp;&nbsp;&nbsp;├─ Leave = WFH / WorkFromHome → <b>Normal + WFA</b><br>
+    &nbsp;&nbsp;&nbsp;└─ Normal biasa → cek Punch In vs shift start:<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Terlambat 1–120 mnt → <b>Normal + Late</b><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Terlambat &gt; 120 mnt → <b>Normal + ½UL</b><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ Tepat / lebih awal / tanpa punch → <b>Normal</b><br>
+    6. Att TIDAK mengandung "normal" (Early Departure, Missed Punch, dll)?<br>
+    &nbsp;&nbsp;&nbsp;├─ Hanya satu punch (in ⊕ out) → <b>½UL</b><br>
+    &nbsp;&nbsp;&nbsp;├─ Tidak ada punch sama sekali → <b>diabaikan</b> (None)<br>
+    &nbsp;&nbsp;&nbsp;├─ Punch Out lebih awal &gt; 120 mnt → <b>½UL</b><br>
+    &nbsp;&nbsp;&nbsp;├─ Punch Out lebih awal ≤ 120 mnt → <b>Late</b><br>
+    &nbsp;&nbsp;&nbsp;└─ Punch Out tepat / lewat jadwal → <b>Normal</b>
   </div>
 
   <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">🔁 Dual-Count</div>
   <div style="background:#eff6ff;border-radius:8px;padding:0.6rem 1rem;margin-bottom:1rem;font-size:0.82rem;border-left:3px solid #3b82f6;">
-    Satu hari bisa menghasilkan <b>2 status sekaligus</b>:<br>
-    • Normal + WFH → <b>Normal</b> dan <b>WFA</b><br>
-    • Normal + AnnualLeave + ada punch → <b>Normal</b> dan <b>½AL</b><br>
-    • Normal + AnnualLeave + tanpa punch → <b>Normal</b> dan <b>AL</b><br>
-    • Normal + K-Sick W Letter → <b>Normal</b> dan <b>K</b>
+    Satu hari bisa menghasilkan <b>2 status sekaligus</b> (keduanya terhitung di rekap):<br>
+    • Punch In terlambat 1–120 mnt + att Normal → <b>Normal</b> dan <b>Late</b><br>
+    • Punch In terlambat &gt; 120 mnt + att Normal → <b>Normal</b> dan <b>½UL</b><br>
+    • K-Sick + att Normal → <b>Normal</b> dan <b>K</b><br>
+    • AnnualLeave + att Normal + ada punch → <b>Normal</b> dan <b>½AL</b><br>
+    • AnnualLeave + att Normal + tanpa punch → <b>Normal</b> dan <b>AL</b><br>
+    • WFH + att Normal → <b>Normal</b> dan <b>WFA</b>
   </div>
 
-  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">📐 Logika Late &amp; ½UL</div>
+  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">📐 Detail Late &amp; ½UL — Dua Sumber</div>
   <div style="background:#fefce8;border-radius:8px;padding:0.6rem 1rem;margin-bottom:1rem;font-size:0.82rem;border-left:3px solid #eab308;">
-    Klasifikasi Late/½UL didasarkan pada <b>Punch Out vs jam selesai shift</b>:<br>
-    • <b>Late</b>: Punch Out tercatat lebih cepat ≤ 120 menit dari jadwal selesai shift<br>
-    • <b>½UL (Kondisi 1)</b>: Punch Out lebih cepat &gt; 120 menit dari jadwal selesai shift<br>
-    • <b>½UL (Kondisi 2)</b>: Hanya ada satu punch (in tanpa out, atau out tanpa in)<br>
-    Shift overnight (mis. 19:00–05:00) dinormalisasi secara otomatis.
+    <b>🔵 Sumber A: Punch In terlambat</b> — berlaku saat att mengandung "normal" (bukan AL/WFA/K-Sick):<br>
+    • <b>Normal + Late</b>: Punch In tercatat 1–120 menit setelah jam mulai shift<br>
+    • <b>Normal + ½UL</b>: Punch In tercatat &gt; 120 menit setelah jam mulai shift<br>
+    • Tepat waktu / lebih awal / tidak ada punch → tidak ada penalti tambahan<br><br>
+    <b>🔴 Sumber B: Punch Out lebih awal / satu punch</b> — berlaku saat att TIDAK mengandung "normal":<br>
+    • <b>Late</b>: kedua punch ada, Punch Out lebih awal 1–120 menit dari shift end<br>
+    • <b>½UL (cond. A)</b>: kedua punch ada, Punch Out lebih awal &gt; 120 menit dari shift end<br>
+    • <b>½UL (cond. B)</b>: hanya satu punch tercatat (in tanpa out, atau sebaliknya)<br><br>
+    Shift overnight (mis. 19:00–05:00) dinormalisasi otomatis (+1440 menit) untuk Sumber B.
   </div>
 
-  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">⚠️ Pengecualian</div>
+  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">⚠️ Pengecualian &amp; Catatan</div>
   <div style="background:#fef9ec;border-radius:8px;padding:0.6rem 1rem;font-size:0.82rem;border-left:3px solid #f59e0b;">
-    • Shift <code>Rest</code> / <code>Not scheduled</code> / <code>--</code> / kosong → <b>dilewati</b> (kecuali jika att = "Normal (rest)" → Off)<br>
-    • Att = "Normal (rest)" / "Normal (not scheduled)" → <b>Off</b>, tidak masuk Normal/Late<br>
-    • Tidak ada punch sama sekali (non-Normal) → <b>diabaikan</b>, tidak diklasifikasi
+    • Shift <code>Rest</code> / <code>Not scheduled</code> / <code>--</code> / kosong → <b>dilewati</b>, <em>kecuali</em> att = "Normal (rest)" → Off<br>
+    • Tidak ada punch sama sekali pada att non-normal → <b>diabaikan</b>, tidak masuk rekap<br>
+    • K-Sick diperiksa <em>sebelum</em> blok Normal agar tidak tertukar dengan AL/WFA<br>
+    • Punch-in tardiness <b>tidak</b> dicek untuk AL / WFA / K-Sick (sudah dual-count sendiri)<br>
+    • Punch Out tepat jadwal atau pulang lebih lama → tetap dihitung <b>Normal</b>
   </div>
 
 </div>
@@ -902,7 +1006,7 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
         }
         df_result.insert(0, "No.", range(1, len(df_result) + 1))
 
-    # ── Metric Cards ──
+    # ── Metric Cards — 5 × 2 grid ──
     total_n   = int(df_result["Normal"].sum())
     total_l   = int(df_result["Late"].sum())
     total_k   = int(df_result["1/2 UL"].sum())
@@ -914,47 +1018,60 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
     total_off = int(df_result["Off"].sum())
     total_e   = stats["employees"]
 
+    # Baris 1: 5 kartu utama
     st.markdown(f"""
 <div class="metric-row">
   <div class="metric-card metric-normal">
-    <div class="label">Total Normal</div>
+    <div class="label">✅ Normal</div>
     <div class="value">{total_n:,}</div>
+    <div class="sub">Hadir tepat / lebih awal</div>
   </div>
   <div class="metric-card metric-late">
-    <div class="label">Late (Pulang ≤2j)</div>
+    <div class="label">🟡 Late</div>
     <div class="value">{total_l:,}</div>
+    <div class="sub">Pulang &le; 2 jam lebih awal</div>
   </div>
   <div class="metric-card metric-k">
-    <div class="label">½ UL (&gt;2j / 1 Punch)</div>
+    <div class="label">🔴 ½ UL</div>
     <div class="value">{total_k:,}</div>
+    <div class="sub">&gt; 2 jam awal / 1 punch</div>
   </div>
   <div class="metric-card metric-dw">
-    <div class="label">DW (Absence)</div>
+    <div class="label">🟠 DW</div>
     <div class="value">{total_dw:,}</div>
-  </div>
-  <div class="metric-card metric-ksick">
-    <div class="label">K-Sick W Letter</div>
-    <div class="value">{total_ks:,}</div>
-  </div>
-  <div class="metric-card metric-al">
-    <div class="label">Annual Leave (AL)</div>
-    <div class="value">{total_al:,}</div>
-  </div>
-  <div class="metric-card metric-half-al">
-    <div class="label">½ Annual Leave</div>
-    <div class="value">{total_hal:,}</div>
-  </div>
-  <div class="metric-card metric-wfa">
-    <div class="label">WFA (Work from Home)</div>
-    <div class="value">{total_wfa:,}</div>
-  </div>
-  <div class="metric-card metric-off">
-    <div class="label">Off (Rest/Unscheduled)</div>
-    <div class="value">{total_off:,}</div>
+    <div class="sub">Absence / Tidak hadir</div>
   </div>
   <div class="metric-card metric-total">
-    <div class="label">Jumlah Karyawan</div>
+    <div class="label">👥 Karyawan</div>
     <div class="value">{total_e:,}</div>
+    <div class="sub">Total dalam periode</div>
+  </div>
+</div>
+<div class="metric-row" style="margin-top:-1rem;">
+  <div class="metric-card metric-ksick">
+    <div class="label">🩺 K-Sick</div>
+    <div class="value">{total_ks:,}</div>
+    <div class="sub">Sakit dengan surat</div>
+  </div>
+  <div class="metric-card metric-al">
+    <div class="label">🟣 AL</div>
+    <div class="value">{total_al:,}</div>
+    <div class="sub">Annual Leave penuh</div>
+  </div>
+  <div class="metric-card metric-half-al">
+    <div class="label">🩷 ½ AL</div>
+    <div class="value">{total_hal:,}</div>
+    <div class="sub">Annual Leave ½ hari</div>
+  </div>
+  <div class="metric-card metric-wfa">
+    <div class="label">🔵 WFA</div>
+    <div class="value">{total_wfa:,}</div>
+    <div class="sub">Work From Anywhere</div>
+  </div>
+  <div class="metric-card metric-off">
+    <div class="label">⬜ Off</div>
+    <div class="value">{total_off:,}</div>
+    <div class="sub">Rest / Not scheduled</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -962,6 +1079,7 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
     # ── Filter & Tabel ──
     st.markdown('<p class="section-title">📊 Hasil Summary per Karyawan</p>', unsafe_allow_html=True)
 
+    # ── Baris filter ──
     fcol1, fcol2, fcol3 = st.columns([2, 2, 1])
     with fcol1:
         all_rules = sorted(df_result["Rules"].unique().tolist())
@@ -971,6 +1089,27 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
     with fcol3:
         show_late_only = st.checkbox("Hanya Late/K/DW", value=False)
 
+    # ── Pilih kolom opsional ──
+    with st.expander("🔧 Tampilkan / Sembunyikan Kolom Kategori", expanded=False):
+        st.markdown(
+            "<div style='font-size:0.83rem;color:#64748b;margin-bottom:0.6rem;'>"
+            "Kolom <b>No., Nama, Account, Rules, Normal, Late, ½UL, DW</b> selalu tampil. "
+            "Pilih kategori tambahan di bawah:</div>",
+            unsafe_allow_html=True,
+        )
+        opt_cols_selected = []
+        oc1, oc2, oc3, oc4, oc5 = st.columns(5)
+        opt_col_ui = [oc1, oc2, oc3, oc4, oc5]
+        for i, (key, label, desc) in enumerate(OPTIONAL_COLS_DEF):
+            with opt_col_ui[i]:
+                checked = st.checkbox(f"{label}", value=False, help=desc, key=f"col_{key}")
+                if checked:
+                    opt_cols_selected.append(key)
+
+    # Susun kolom yang ditampilkan
+    visible_cols = CORE_COLS + opt_cols_selected
+
+    # Terapkan filter
     df_show = df_result.copy()
     if sel_rules:
         df_show = df_show[df_show["Rules"].isin(sel_rules)]
@@ -988,29 +1127,24 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
     df_show = df_show.copy()
     df_show["No."] = range(1, len(df_show) + 1)
 
-    st.caption("💡 **Klik baris karyawan** untuk melihat rincian harian & tanggal keterlambatan")
+    # Tampilkan jumlah kolom aktif & hint
+    hidden = [OPTIONAL_LABELS[k] for k in OPTIONAL_KEYS if k not in opt_cols_selected]
+    hint_parts = []
+    if hidden:
+        hint_parts.append(f"Kolom tersembunyi: {', '.join(hidden)}")
+    st.caption(
+        "💡 **Klik baris** untuk melihat rincian harian  ·  "
+        + ("  ·  ".join(hint_parts) if hint_parts else "Semua kolom kategori ditampilkan")
+    )
+
     sel_event = st.dataframe(
-        df_show,
+        df_show[visible_cols],
         use_container_width=True,
         height=520,
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
-        column_config={
-            "No."    : st.column_config.NumberColumn("No.", width="small"),
-            "Nama"   : st.column_config.TextColumn("Nama", width="large"),
-            "Account": st.column_config.TextColumn("Account", width="medium"),
-            "Rules"  : st.column_config.TextColumn("Rules", width="medium"),
-            "Normal" : st.column_config.NumberColumn("Normal ✅", format="%d", width="small"),
-            "Late"   : st.column_config.NumberColumn("Late 🟡", format="%d", width="small"),
-            "1/2 UL" : st.column_config.NumberColumn("½UL 🔴", format="%d", width="small"),
-            "DW"     : st.column_config.NumberColumn("DW 🟠", format="%d", width="small"),
-            "K"      : st.column_config.NumberColumn("K 🩺", format="%d", width="small"),
-            "AL"     : st.column_config.NumberColumn("AL 🟣", format="%d", width="small"),
-            "1/2 AL" : st.column_config.NumberColumn("½AL 🩷", format="%d", width="small"),
-            "WFA"    : st.column_config.NumberColumn("WFA 🔵", format="%d", width="small"),
-            "Off"    : st.column_config.NumberColumn("Off ⬜", format="%d", width="small"),
-        },
+        column_config={k: v for k, v in COL_CONFIG_ALL.items() if k in visible_cols},
     )
 
     sel_rows = sel_event.selection.rows if sel_event and sel_event.selection else []

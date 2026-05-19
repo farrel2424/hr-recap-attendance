@@ -19,7 +19,11 @@ Flow:
   att_result mengandung "normal"
     ├─ leave_app = AnnualLeave  → AL / ½AL                   ["Normal","AL"] / ["Normal","1/2 AL"]
     ├─ leave_app = WFH/WorkFromHome → WFA                    ["Normal","WFA"]
-    └─ lain-lain                → Normal                     ["Normal"]
+    └─ lain-lain (Normal biasa)
+         → cek Punch In vs shift start:
+              terlambat ≤ 120 mnt → dual-count Late          ["Normal","Late"]
+              terlambat  > 120 mnt → dual-count ½UL          ["Normal","1/2 UL"]
+              tepat/lebih awal    → Normal murni              ["Normal"]
 
   att_result TIDAK mengandung "normal" (Early Departure, Missed Punch, dll)
     → Berdasarkan Punch Out vs shift end:
@@ -35,6 +39,7 @@ import pandas as pd
 from .base          import parse_shift_start, parse_shift_end, SKIP_SHIFTS
 from .normal        import classify as _classify_normal
 from .late          import classify as _classify_late
+from .late_in       import classify as _classify_late_in
 from .annual_leave  import classify as _classify_annual_leave
 from .wfa           import classify as _classify_wfa
 from .dw            import classify as _classify_dw
@@ -66,7 +71,8 @@ def classify(
     Klasifikasi satu baris absensi.
 
     Returns:
-        list of str  — e.g. ["Normal"], ["Normal","WFA"], ["Late"], ["1/2 UL"], ["DW"], ["Off"]
+        list of str  — e.g. ["Normal"], ["Normal","Late"], ["Normal","1/2 UL"],
+                            ["Normal","WFA"], ["Late"], ["1/2 UL"], ["DW"], ["Off"]
         None         — shift dilewati (Rest / Not scheduled / dll) atau tidak ada data
     """
     att_str   = str(att_result).strip() if pd.notna(att_result) else ""
@@ -101,7 +107,11 @@ def classify(
                 return _classify_annual_leave(earliest_raw, latest_raw)
             if "workfromhome" in leave_lower or "wfh" in leave_lower:
                 return _classify_wfa(earliest_raw, latest_raw)
-        # Normal biasa (tepat waktu, atau leave jenis lain)
+
+        # Normal biasa — cek tambahan keterlambatan Punch In vs shift start
+        late_in = _classify_late_in(earliest_raw, shift_start)
+        if late_in:
+            return ["Normal"] + late_in   # ["Normal","Late"] atau ["Normal","1/2 UL"]
         return _classify_normal()
 
     # ── Tidak ada "normal" → cek pulang lebih awal / hanya satu punch ───────
@@ -121,7 +131,7 @@ def classify_str(
 ) -> str | None:
     """
     Versi string dari classify() — untuk disimpan ke DB (dipisah '/').
-    Contoh: "Normal/WFA", "Normal/K", "Late", "DW", "Off", None
+    Contoh: "Normal/Late", "Normal/1/2 UL", "Normal/WFA", "Late", "DW", "Off", None
     """
     result = classify(earliest_raw, shift_text, att_result, latest_raw, leave_app)
     return "/".join(result) if result else None
