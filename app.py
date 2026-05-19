@@ -788,7 +788,152 @@ COL_CONFIG_ALL = {
     "Off"    : st.column_config.NumberColumn("Off ⬜",   format="%d", width="small"),
 }
 
-
+"""
+ 
+DIALOG_FUNCTION = '''
+# ──────────────────────────────────────────────────────────────
+# Dialog: Logic Klasifikasi
+# ──────────────────────────────────────────────────────────────
+ 
+@st.dialog("📋 Logic Klasifikasi Absensi", width="large")
+def show_logic_dialog():
+    st.markdown("""
+<div style="font-size:0.85rem;color:#334155;line-height:1.9;">
+ 
+  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;
+              text-transform:uppercase;letter-spacing:0.06em;">🏷️ Status & Kondisi Pemicu</div>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:1.2rem;">
+    <tr style="background:#f1f5f9;">
+      <td style="padding:0.4rem 0.7rem;border-radius:6px 0 0 6px;font-weight:600;
+                 white-space:nowrap;width:110px;">✅ Normal</td>
+      <td style="padding:0.4rem 0.7rem;">
+        Att Results mengandung <code>"normal"</code>, Punch In tepat waktu atau lebih awal dari shift start,
+        dan tidak ada kondisi leave / keterlambatan khusus.
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🟡 Late</td>
+      <td style="padding:0.4rem 0.7rem;">
+        <b>Punch In terlambat 1–120 menit</b> dari jam mulai shift.<br>
+        Berlaku <b>tanpa memandang Att. Results</b> — hanya lihat selisih waktu punch in vs shift start.<br>
+        Output: <code>["Late"]</code> (standalone, bukan dual-count dengan Normal)
+      </td>
+    </tr>
+    <tr style="background:#f1f5f9;">
+      <td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🔴 ½UL</td>
+      <td style="padding:0.4rem 0.7rem;">
+        <b>Punch In terlambat &gt; 120 menit</b> dari jam mulai shift.<br>
+        Berlaku <b>tanpa memandang Att. Results</b> — hanya lihat selisih waktu punch in vs shift start.<br>
+        Output: <code>["1/2 UL"]</code> (standalone, bukan dual-count dengan Normal)
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🟠 DW</td>
+      <td style="padding:0.4rem 0.7rem;">
+        Att Results mengandung kata <code>"Absence"</code> — tidak hadir sama sekali.
+      </td>
+    </tr>
+    <tr style="background:#f1f5f9;">
+      <td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🩺 K</td>
+      <td style="padding:0.4rem 0.7rem;">
+        Leave mengandung <code>"K-Sick W Letter"</code>. Dicek <em>sebelum</em> logika Late/Normal.<br>
+        Jika att juga Normal → <b>dual-count: Normal + K</b>; jika tidak → <b>K</b> saja.
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">⬜ Off</td>
+      <td style="padding:0.4rem 0.7rem;">
+        Att Results bernilai tepat <code>"Normal (rest)"</code> atau <code>"Normal (not scheduled)"</code>
+        — dicek paling awal, sebelum semua logika lainnya.
+      </td>
+    </tr>
+    <tr style="background:#f1f5f9;">
+      <td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🟣 AL</td>
+      <td style="padding:0.4rem 0.7rem;">
+        Leave = <code>AnnualLeave</code> + Att normal + <b>tidak ada punch</b> sama sekali
+        → <b>Normal + AL</b>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🩷 ½AL</td>
+      <td style="padding:0.4rem 0.7rem;">
+        Leave = <code>AnnualLeave</code> + Att normal + <b>ada punch in &amp; out</b>
+        → <b>Normal + ½AL</b>
+      </td>
+    </tr>
+    <tr style="background:#f1f5f9;">
+      <td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🔵 WFA</td>
+      <td style="padding:0.4rem 0.7rem;">
+        Leave mengandung <code>"WorkFromHome"</code> / <code>"WFH"</code> + Att normal
+        → selalu <b>Normal + WFA</b>
+      </td>
+    </tr>
+  </table>
+ 
+  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;
+              text-transform:uppercase;letter-spacing:0.06em;">🔀 Alur Keputusan (Urutan Prioritas)</div>
+  <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:0.8rem 1rem;
+              font-family:'DM Mono',monospace;font-size:0.78rem;line-height:2.1;
+              margin-bottom:1.2rem;color:#475569;">
+    1. Att = "Normal (rest)" / "Normal (not scheduled)"? → <b>Off</b> — selesai<br>
+    2. Shift = Rest / Not scheduled / kosong / "--"? → <b>dilewati</b> (None)<br>
+    3. Att mengandung "Absence"? → <b>DW</b> — selesai<br>
+    4. Leave mengandung "K-Sick W Letter"?<br>
+    &nbsp;&nbsp;&nbsp;├─ Att juga mengandung "normal" → <b>Normal + K</b><br>
+    &nbsp;&nbsp;&nbsp;└─ Att tidak mengandung "normal" → <b>K</b><br>
+    5. Att mengandung "normal" + "leave"?<br>
+    &nbsp;&nbsp;&nbsp;├─ Leave = AnnualLeave + tidak ada punch → <b>Normal + AL</b><br>
+    &nbsp;&nbsp;&nbsp;├─ Leave = AnnualLeave + ada kedua punch → <b>Normal + ½AL</b><br>
+    &nbsp;&nbsp;&nbsp;└─ Leave = WFH / WorkFromHome → <b>Normal + WFA</b><br>
+    6. Cek Punch In vs Shift Start (berlaku tanpa memandang Att. Results):<br>
+    &nbsp;&nbsp;&nbsp;├─ Terlambat 1–120 mnt → <b>Late</b> — selesai<br>
+    &nbsp;&nbsp;&nbsp;└─ Terlambat &gt; 120 mnt → <b>1/2 UL</b> — selesai<br>
+    7. Punch In tepat / lebih awal + Att mengandung "normal" → <b>Normal</b><br>
+    8. Selain itu → <b>tidak diklasifikasi</b> (dilewati)
+  </div>
+ 
+  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;
+              text-transform:uppercase;letter-spacing:0.06em;">📐 Aturan Late &amp; ½UL — Berbasis Punch In</div>
+  <div style="background:#fefce8;border-radius:8px;padding:0.7rem 1rem;margin-bottom:1.2rem;
+              font-size:0.82rem;border-left:3px solid #eab308;">
+    <b>Satu-satunya penentu Late / ½UL adalah selisih Punch In vs jam mulai shift:</b><br>
+    • <b>Late</b>: Punch In tercatat <b>1–120 menit</b> setelah jam mulai shift<br>
+    • <b>½UL</b>: Punch In tercatat <b>&gt; 120 menit</b> setelah jam mulai shift<br>
+    • Att. Results <b>tidak diperiksa</b> untuk status ini — hanya selisih waktu yang menentukan<br>
+    • Output bersifat <em>standalone</em> — tidak ada dual-count dengan Normal<br><br>
+    <b>Contoh:</b> Shift 09:30–18:30, Punch In 17:21<br>
+    Selisih = 471 menit &gt; 120 menit → <b>1/2 UL</b> (bukan Late, bukan Normal + ½UL)
+  </div>
+ 
+  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;
+              text-transform:uppercase;letter-spacing:0.06em;">🔁 Dual-Count (masih berlaku untuk status berikut)</div>
+  <div style="background:#eff6ff;border-radius:8px;padding:0.6rem 1rem;margin-bottom:1.2rem;
+              font-size:0.82rem;border-left:3px solid #3b82f6;">
+    Satu hari bisa menghasilkan <b>2 status sekaligus</b> khusus untuk status di bawah ini:<br>
+    • K-Sick + att Normal → <b>Normal</b> dan <b>K</b><br>
+    • AnnualLeave + att Normal + ada punch → <b>Normal</b> dan <b>½AL</b><br>
+    • AnnualLeave + att Normal + tanpa punch → <b>Normal</b> dan <b>AL</b><br>
+    • WFH + att Normal → <b>Normal</b> dan <b>WFA</b><br>
+    <span style="color:#ef4444;font-weight:600;">Late dan ½UL tidak lagi dual-count</span>
+    — output-nya adalah status tunggal berdasarkan keterlambatan Punch In.
+  </div>
+ 
+  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;
+              text-transform:uppercase;letter-spacing:0.06em;">⚠️ Pengecualian &amp; Catatan</div>
+  <div style="background:#fef9ec;border-radius:8px;padding:0.6rem 1rem;
+              font-size:0.82rem;border-left:3px solid #f59e0b;">
+    • Shift <code>Rest</code> / <code>Not scheduled</code> / <code>--</code> / kosong
+      → <b>dilewati</b>, <em>kecuali</em> att = "Normal (rest)" → Off<br>
+    • K-Sick diperiksa <em>sebelum</em> blok AL/WFA agar tidak tertukar<br>
+    • Karyawan dengan AL / WFA / K-Sick tidak dikenai cek keterlambatan Punch In<br>
+    • Jika tidak ada data Punch In (not punched) → tidak ada penalti Late / ½UL
+  </div>
+ 
+</div>
+""", unsafe_allow_html=True)
+'''
+ 
+"""
 # ──────────────────────────────────────────────────────────────
 # UI
 # ──────────────────────────────────────────────────────────────
@@ -801,9 +946,12 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-col_up, col_info = st.columns([2, 1], gap="large")
-
-with col_up:
+"""
+ 
+LAYOUT_NEW = '''
+upload_col, btn_col = st.columns([5, 1], gap="medium")
+ 
+with upload_col:
     st.markdown('<p class="section-title">📂 Upload File Excel</p>', unsafe_allow_html=True)
     periodes_tersedia = get_periodes()
     if periodes_tersedia:
@@ -814,133 +962,19 @@ with col_up:
         )
     else:
         periode_dipilih = "— Upload file baru —"
-
+ 
     uploaded = st.file_uploader(
         label="", type=["xlsx", "xls"], label_visibility="collapsed",
         help="File Excel dari sistem absensi. Sheet 'General statistics and attendan' harus ada."
     )
-
-with col_info:
-    st.markdown("""
-<details style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:0.8rem 1.2rem;cursor:pointer;">
-<summary style="font-size:0.88rem;font-weight:700;color:#1e293b;list-style:none;display:flex;align-items:center;gap:0.5rem;user-select:none;">
-  <span>📋 Logic Klasifikasi</span>
-  <span style="margin-left:auto;font-size:0.75rem;color:#94a3b8;font-weight:400;">klik untuk expand</span>
-</summary>
-<div style="margin-top:1rem;font-size:0.85rem;color:#334155;line-height:1.9;">
-
-  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">🏷️ Status Utama</div>
-  <table style="width:100%;border-collapse:collapse;margin-bottom:1rem;">
-    <tr style="background:#f1f5f9;">
-      <td style="padding:0.35rem 0.6rem;border-radius:6px 0 0 6px;font-weight:600;white-space:nowrap;">✅ Normal</td>
-      <td style="padding:0.35rem 0.6rem;">Att Results mengandung <code>"normal"</code>, bukan <em>rest</em>/<em>not scheduled</em>, dan tidak ada kondisi leave khusus</td>
-    </tr>
-    <tr>
-      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🟡 Late</td>
-      <td style="padding:0.35rem 0.6rem;">
-        <b>Sumber A — Punch In terlambat</b> (att normal, bukan AL/WFA/K):<br>
-        &nbsp;&nbsp;Punch In lebih lambat <b>1–120 menit</b> dari jam mulai shift → <b>Normal + Late</b><br>
-        <b>Sumber B — Punch Out lebih awal</b> (att tidak normal):<br>
-        &nbsp;&nbsp;ada dua punch + Punch Out lebih awal <b>≤ 120 menit</b> dari jam selesai shift → <b>Late</b>
-      </td>
-    </tr>
-    <tr style="background:#f1f5f9;">
-      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🔴 ½UL</td>
-      <td style="padding:0.35rem 0.6rem;">
-        <b>Sumber A — Punch In terlambat</b> (att normal, bukan AL/WFA/K):<br>
-        &nbsp;&nbsp;Punch In lebih lambat <b>&gt; 120 menit</b> dari jam mulai shift → <b>Normal + ½UL</b><br>
-        <b>Sumber B — Punch Out lebih awal / satu punch</b> (att tidak normal):<br>
-        &nbsp;&nbsp;(a) hanya <b>satu punch</b> (in tanpa out atau out tanpa in), <b>atau</b><br>
-        &nbsp;&nbsp;(b) Punch Out lebih awal <b>&gt; 120 menit</b> dari jadwal selesai shift → <b>½UL</b>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🟠 DW</td>
-      <td style="padding:0.35rem 0.6rem;">Att Results mengandung kata <code>"Absence"</code> (tidak hadir sama sekali)</td>
-    </tr>
-    <tr style="background:#f1f5f9;">
-      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🩺 K</td>
-      <td style="padding:0.35rem 0.6rem;">Leave mengandung <code>"K-Sick W Letter"</code>. Dicek <em>sebelum</em> Normal agar tidak tertimpa AL/WFA.<br>
-        Jika att juga normal → <b>dual-count: Normal + K</b>; jika tidak → <b>K</b> saja</td>
-    </tr>
-    <tr>
-      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">⬜ Off</td>
-      <td style="padding:0.35rem 0.6rem;">Att Results bernilai <em>tepat</em> <code>"Normal (rest)"</code> atau <code>"Normal (not scheduled)"</code> — dicek <b>paling awal</b>, sebelum logika lainnya</td>
-    </tr>
-    <tr style="background:#f1f5f9;">
-      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🟣 AL</td>
-      <td style="padding:0.35rem 0.6rem;">Leave = <code>AnnualLeave</code> + Att normal + <b>tidak ada punch</b> sama sekali → <b>Normal + AL</b></td>
-    </tr>
-    <tr>
-      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🩷 ½AL</td>
-      <td style="padding:0.35rem 0.6rem;">Leave = <code>AnnualLeave</code> + Att normal + <b>ada punch in &amp; out</b> → <b>Normal + ½AL</b></td>
-    </tr>
-    <tr style="background:#f1f5f9;">
-      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🔵 WFA</td>
-      <td style="padding:0.35rem 0.6rem;">Leave mengandung <code>"WorkFromHome"</code> / <code>"WFH"</code> + Att normal → selalu <b>Normal + WFA</b></td>
-    </tr>
-  </table>
-
-  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">🔀 Alur Keputusan (Urutan Prioritas)</div>
-  <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:0.7rem 1rem;font-family:'DM Mono',monospace;font-size:0.78rem;line-height:2;margin-bottom:1rem;color:#475569;">
-    1. Att = "Normal (rest)" / "Normal (not scheduled)"? → <b>Off</b> — selesai<br>
-    2. Shift = Rest / Not scheduled / kosong / "--"? → <b>dilewati</b> (None)<br>
-    3. Att mengandung "Absence"? → <b>DW</b> — selesai<br>
-    4. Leave mengandung "K-Sick W Letter"?<br>
-    &nbsp;&nbsp;&nbsp;├─ Att juga mengandung "normal" → <b>Normal + K</b><br>
-    &nbsp;&nbsp;&nbsp;└─ Att tidak mengandung "normal" → <b>K</b><br>
-    5. Att mengandung "normal"?<br>
-    &nbsp;&nbsp;&nbsp;├─ Leave = AnnualLeave + tidak ada punch → <b>Normal + AL</b><br>
-    &nbsp;&nbsp;&nbsp;├─ Leave = AnnualLeave + ada kedua punch → <b>Normal + ½AL</b><br>
-    &nbsp;&nbsp;&nbsp;├─ Leave = WFH / WorkFromHome → <b>Normal + WFA</b><br>
-    &nbsp;&nbsp;&nbsp;└─ Normal biasa → cek Punch In vs shift start:<br>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Terlambat 1–120 mnt → <b>Normal + Late</b><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ Terlambat &gt; 120 mnt → <b>Normal + ½UL</b><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ Tepat / lebih awal / tanpa punch → <b>Normal</b><br>
-    6. Att TIDAK mengandung "normal" (Early Departure, Missed Punch, dll)?<br>
-    &nbsp;&nbsp;&nbsp;├─ Hanya satu punch (in ⊕ out) → <b>½UL</b><br>
-    &nbsp;&nbsp;&nbsp;├─ Tidak ada punch sama sekali → <b>diabaikan</b> (None)<br>
-    &nbsp;&nbsp;&nbsp;├─ Punch Out lebih awal &gt; 120 mnt → <b>½UL</b><br>
-    &nbsp;&nbsp;&nbsp;├─ Punch Out lebih awal ≤ 120 mnt → <b>Late</b><br>
-    &nbsp;&nbsp;&nbsp;└─ Punch Out tepat / lewat jadwal → <b>Normal</b>
-  </div>
-
-  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">🔁 Dual-Count</div>
-  <div style="background:#eff6ff;border-radius:8px;padding:0.6rem 1rem;margin-bottom:1rem;font-size:0.82rem;border-left:3px solid #3b82f6;">
-    Satu hari bisa menghasilkan <b>2 status sekaligus</b> (keduanya terhitung di rekap):<br>
-    • Punch In terlambat 1–120 mnt + att Normal → <b>Normal</b> dan <b>Late</b><br>
-    • Punch In terlambat &gt; 120 mnt + att Normal → <b>Normal</b> dan <b>½UL</b><br>
-    • K-Sick + att Normal → <b>Normal</b> dan <b>K</b><br>
-    • AnnualLeave + att Normal + ada punch → <b>Normal</b> dan <b>½AL</b><br>
-    • AnnualLeave + att Normal + tanpa punch → <b>Normal</b> dan <b>AL</b><br>
-    • WFH + att Normal → <b>Normal</b> dan <b>WFA</b>
-  </div>
-
-  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">📐 Detail Late &amp; ½UL — Dua Sumber</div>
-  <div style="background:#fefce8;border-radius:8px;padding:0.6rem 1rem;margin-bottom:1rem;font-size:0.82rem;border-left:3px solid #eab308;">
-    <b>🔵 Sumber A: Punch In terlambat</b> — berlaku saat att mengandung "normal" (bukan AL/WFA/K-Sick):<br>
-    • <b>Normal + Late</b>: Punch In tercatat 1–120 menit setelah jam mulai shift<br>
-    • <b>Normal + ½UL</b>: Punch In tercatat &gt; 120 menit setelah jam mulai shift<br>
-    • Tepat waktu / lebih awal / tidak ada punch → tidak ada penalti tambahan<br><br>
-    <b>🔴 Sumber B: Punch Out lebih awal / satu punch</b> — berlaku saat att TIDAK mengandung "normal":<br>
-    • <b>Late</b>: kedua punch ada, Punch Out lebih awal 1–120 menit dari shift end<br>
-    • <b>½UL (cond. A)</b>: kedua punch ada, Punch Out lebih awal &gt; 120 menit dari shift end<br>
-    • <b>½UL (cond. B)</b>: hanya satu punch tercatat (in tanpa out, atau sebaliknya)<br><br>
-    Shift overnight (mis. 19:00–05:00) dinormalisasi otomatis (+1440 menit) untuk Sumber B.
-  </div>
-
-  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">⚠️ Pengecualian &amp; Catatan</div>
-  <div style="background:#fef9ec;border-radius:8px;padding:0.6rem 1rem;font-size:0.82rem;border-left:3px solid #f59e0b;">
-    • Shift <code>Rest</code> / <code>Not scheduled</code> / <code>--</code> / kosong → <b>dilewati</b>, <em>kecuali</em> att = "Normal (rest)" → Off<br>
-    • Tidak ada punch sama sekali pada att non-normal → <b>diabaikan</b>, tidak masuk rekap<br>
-    • K-Sick diperiksa <em>sebelum</em> blok Normal agar tidak tertukar dengan AL/WFA<br>
-    • Punch-in tardiness <b>tidak</b> dicek untuk AL / WFA / K-Sick (sudah dual-count sendiri)<br>
-    • Punch Out tepat jadwal atau pulang lebih lama → tetap dihitung <b>Normal</b>
-  </div>
-
-</div>
-</details>
-""", unsafe_allow_html=True)
+ 
+with btn_col:
+    st.markdown("<div style='margin-top:2.1rem'></div>", unsafe_allow_html=True)
+    if st.button("📋 Logic\\nKlasifikasi", use_container_width=True, type="secondary"):
+        show_logic_dialog()
+'''
+ 
+"""
 
 # ── Proses ──
 if uploaded is not None or periode_dipilih != "— Upload file baru —":
