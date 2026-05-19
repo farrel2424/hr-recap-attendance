@@ -16,6 +16,7 @@ from classifiers import (
     classify_str,
     classify_shift_type,
     parse_shift_start,
+    parse_shift_end,
     parse_time_to_minutes,
     has_status,
     SKIP_SHIFTS,
@@ -33,6 +34,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 init_db()
+
 # ──────────────────────────────────────────────────────────────
 # Custom CSS
 # ──────────────────────────────────────────────────────────────
@@ -101,7 +103,7 @@ html, body, [class*="css"] {
 }
 .metric-card {
     flex: 1;
-    min-width: 120px;
+    min-width: 110px;
     border-radius: 12px;
     padding: 1.2rem 1.5rem;
     font-weight: 600;
@@ -113,6 +115,9 @@ html, body, [class*="css"] {
 .metric-al      { background: #fdf4ff; border-left: 4px solid #a855f7; }
 .metric-half-al { background: #fff1f2; border-left: 4px solid #fb7185; }
 .metric-wfa     { background: #f0f9ff; border-left: 4px solid #0ea5e9; }
+.metric-dw      { background: #fff7ed; border-left: 4px solid #f97316; }
+.metric-ksick   { background: #fdf2f8; border-left: 4px solid #ec4899; }
+.metric-off     { background: #f8fafc; border-left: 4px solid #94a3b8; }
 
 .metric-card .label { font-size: 0.78rem; color: #64748b; font-weight: 500; text-transform: uppercase; letter-spacing: 0.07em; }
 .metric-card .value { font-size: 2rem; font-weight: 700; margin-top: 0.2rem; font-family: 'DM Mono', monospace; }
@@ -123,6 +128,9 @@ html, body, [class*="css"] {
 .metric-al      .value { color: #9333ea; }
 .metric-half-al .value { color: #e11d48; }
 .metric-wfa     .value { color: #0284c7; }
+.metric-dw      .value { color: #ea580c; }
+.metric-ksick   .value { color: #db2777; }
+.metric-off     .value { color: #64748b; }
 
 .rules-pill {
     display: inline-block;
@@ -188,7 +196,6 @@ def parse_date_from_time(val):
     return m.group(1) if m else val.strip()
 
 
-
 @st.cache_data(show_spinner=False)
 def get_employee_daily(file_bytes, account):
     buf = io.BytesIO(file_bytes)
@@ -225,13 +232,11 @@ def get_employee_daily(file_bytes, account):
         if earliest_str in _NOT_PUNCHED and latest_str in _NOT_PUNCHED:
             tipe = "H"
 
-        # classify() sekarang return list atau None
         _klas_raw = classify(
             r["Earliest"], r["Shift"], r["Attendance results"],
             latest_raw=r["Latest"],
             leave_app=r.get("Leave & Overtime Application"),
         )
-        # Display: gabung dengan " / " jika lebih dari satu status
         _klas_display = " / ".join(_klas_raw) if _klas_raw else None
 
         rows.append({
@@ -242,8 +247,8 @@ def get_employee_daily(file_bytes, account):
             "Jam Keluar"     : str(r["Latest"]).strip()   if pd.notna(r["Latest"])   else "--",
             "Status"         : str(r["Attendance results"]).strip() if pd.notna(r["Attendance results"]) else "--",
             "Jam Kerja"      : r["Jam Kerja"],
-            "Klasifikasi"    : _klas_display,   # string untuk tampilan
-            "Klasifikasi_raw": _klas_raw,        # list untuk filter
+            "Klasifikasi"    : _klas_display,
+            "Klasifikasi_raw": _klas_raw,
         })
 
     detail_df = pd.DataFrame(rows).sort_values("Tanggal").reset_index(drop=True)
@@ -299,28 +304,25 @@ def show_daily_detail(account, nama, rules, file_bytes):
 
     st.markdown("<div style='margin-top:1.2rem'></div>", unsafe_allow_html=True)
 
-    def _menit_terlambat(row):
-        shift_start = parse_shift_start(row["Shift"])
-        jam_masuk   = parse_time_to_minutes(row["Jam Masuk"])
-        if shift_start is None or jam_masuk is None:
+    def _menit_lebih_awal(row):
+        """Hitung berapa menit karyawan pulang lebih awal dari jadwal shift."""
+        s_end   = parse_shift_end(row["Shift"])
+        s_start = parse_shift_start(row["Shift"])
+        jam_keluar = parse_time_to_minutes(row["Jam Keluar"])
+        if s_end is None or jam_keluar is None:
             return "--"
-        diff = jam_masuk - shift_start
+        # Normalisasi overnight
+        if s_start is not None and s_end < s_start:
+            s_end += 1440
+            if jam_keluar < s_start:
+                jam_keluar += 1440
+        diff = s_end - jam_keluar
         if diff <= 0:
             return "--"
         h, m = divmod(diff, 60)
         return f"{h}j {m}m" if h > 0 else f"{m} mnt"
 
-    # Emoji map untuk semua status
-    KLAS_EMOJI = {
-        "Normal"   : "✅ Normal",
-        "Late"     : "🟡 Late",
-        "1/2 UL"   : "🔴 1/2 UL",
-        "AL"       : "🟣 AL",
-        "1/2 AL"   : "🩷 ½AL",
-        "WFA"      : "🔵 WFA",
-    }
-
-    # ── Filter pakai Klasifikasi_raw (list) ──────────────────
+    # Filter per status
     late_df = detail_df[detail_df["Klasifikasi_raw"].apply(
         lambda x: has_status(x, "Late")
     )].copy()
@@ -333,24 +335,32 @@ def show_daily_detail(account, nama, rules, file_bytes):
     wfa_df  = detail_df[detail_df["Klasifikasi_raw"].apply(
         lambda x: has_status(x, "WFA")
     )].copy()
+    dw_df   = detail_df[detail_df["Klasifikasi_raw"].apply(
+        lambda x: has_status(x, "DW")
+    )].copy()
+    k_sick_df = detail_df[detail_df["Klasifikasi_raw"].apply(
+        lambda x: has_status(x, "K")
+    )].copy()
 
-    n_late = len(late_df)
-    n_k    = len(k_df)
-    n_al   = len(al_df)
-    n_wfa  = len(wfa_df)
+    n_late   = len(late_df)
+    n_k      = len(k_df)
+    n_al     = len(al_df)
+    n_wfa    = len(wfa_df)
+    n_dw     = len(dw_df)
+    n_k_sick = len(k_sick_df)
 
-    # ── Expander 1: Keterlambatan ──
-    late_label = f"⚠️ Rincian Keterlambatan  —  🟡 {n_late} Late  ·  🔴 {n_k} ½UL"
+    # ── Expander 1: Pulang Lebih Awal / Satu Punch ──
+    late_label = f"⚠️ Rincian Pelanggaran Jam Kerja  —  🟡 {n_late} Late  ·  🔴 {n_k} ½UL"
     with st.expander(late_label, expanded=False):
         if n_late == 0 and n_k == 0:
-            st.success("✅ Tidak ada keterlambatan pada periode ini.")
+            st.success("✅ Tidak ada pelanggaran jam kerja pada periode ini.")
         else:
             mc1, mc2 = st.columns(2)
             with mc1:
                 st.markdown(f"""
 <div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:10px;
             padding:.8rem 1.1rem;text-align:center;margin-bottom:.8rem;">
-  <div style="font-size:0.72rem;color:#92400e;font-weight:600;text-transform:uppercase;">🟡 Late</div>
+  <div style="font-size:0.72rem;color:#92400e;font-weight:600;text-transform:uppercase;">🟡 Late (pulang &le;2j lebih awal)</div>
   <div style="font-size:1.7rem;font-weight:700;color:#d97706;font-family:'DM Mono',monospace;">
     {n_late}<span style="font-size:.9rem"> hari</span></div>
 </div>""", unsafe_allow_html=True)
@@ -358,35 +368,79 @@ def show_daily_detail(account, nama, rules, file_bytes):
                 st.markdown(f"""
 <div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:10px;
             padding:.8rem 1.1rem;text-align:center;margin-bottom:.8rem;">
-  <div style="font-size:0.72rem;color:#991b1b;font-weight:600;text-transform:uppercase;">🔴 ½UL (&gt;2 jam)</div>
+  <div style="font-size:0.72rem;color:#991b1b;font-weight:600;text-transform:uppercase;">🔴 ½UL (&gt;2j lebih awal / satu punch)</div>
   <div style="font-size:1.7rem;font-weight:700;color:#dc2626;font-family:'DM Mono',monospace;">
     {n_k}<span style="font-size:.9rem"> hari</span></div>
 </div>""", unsafe_allow_html=True)
 
             combined = pd.concat([late_df, k_df]).sort_values("Tanggal").reset_index(drop=True)
-            combined["No."]       = range(1, len(combined) + 1)
-            combined["Terlambat"] = combined.apply(_menit_terlambat, axis=1)
-            combined["Klasifikasi"] = combined["Klasifikasi"].fillna("—")
+            combined["No."]          = range(1, len(combined) + 1)
+            combined["Lebih Awal"]   = combined.apply(_menit_lebih_awal, axis=1)
+            combined["Klasifikasi"]  = combined["Klasifikasi"].fillna("—")
             st.dataframe(
-                combined[["No.", "Tanggal", "Klasifikasi", "Shift", "Jam Masuk", "Jam Keluar", "Terlambat"]],
+                combined[["No.", "Tanggal", "Klasifikasi", "Shift", "Jam Masuk", "Jam Keluar", "Lebih Awal"]],
                 use_container_width=True,
                 height=min(60 + len(combined) * 35, 380),
                 hide_index=True,
+                column_config={
+                    "Lebih Awal": st.column_config.TextColumn("Pulang Lebih Awal", width="medium"),
+                },
             )
 
-    # ── Expander 2: Leave (AL / ½AL / WFA) ──
+    # ── Expander 2: DW & K-Sick ──
+    dw_label = f"🚫 DW & Sakit  —  🟠 DW: {n_dw}  ·  🩺 K-Sick: {n_k_sick}"
+    with st.expander(dw_label, expanded=False):
+        if n_dw == 0 and n_k_sick == 0:
+            st.info("Tidak ada data DW / K-Sick pada periode ini.")
+        else:
+            dc1, dc2 = st.columns(2)
+            with dc1:
+                st.markdown(f"""
+<div style="background:#fff7ed;border-left:4px solid #f97316;border-radius:10px;
+            padding:.8rem 1.1rem;text-align:center;margin-bottom:.8rem;">
+  <div style="font-size:0.72rem;color:#9a3412;font-weight:600;text-transform:uppercase;">🟠 DW (Absence)</div>
+  <div style="font-size:1.7rem;font-weight:700;color:#ea580c;font-family:'DM Mono',monospace;">
+    {n_dw}<span style="font-size:.9rem"> hari</span></div>
+</div>""", unsafe_allow_html=True)
+            with dc2:
+                st.markdown(f"""
+<div style="background:#fdf2f8;border-left:4px solid #ec4899;border-radius:10px;
+            padding:.8rem 1.1rem;text-align:center;margin-bottom:.8rem;">
+  <div style="font-size:0.72rem;color:#9d174d;font-weight:600;text-transform:uppercase;">🩺 K-Sick W Letter</div>
+  <div style="font-size:1.7rem;font-weight:700;color:#db2777;font-family:'DM Mono',monospace;">
+    {n_k_sick}<span style="font-size:.9rem"> hari</span></div>
+</div>""", unsafe_allow_html=True)
+
+            if n_dw > 0:
+                st.markdown("**🟠 DW — Tidak Hadir (Absence)**")
+                dw_df["No."] = range(1, len(dw_df) + 1)
+                st.dataframe(
+                    dw_df[["No.", "Tanggal", "Shift", "Status"]],
+                    use_container_width=True,
+                    height=min(60 + len(dw_df) * 35, 280),
+                    hide_index=True,
+                    column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
+                )
+            if n_k_sick > 0:
+                st.markdown("**🩺 K-Sick — Sakit dengan Surat**")
+                k_sick_df["No."] = range(1, len(k_sick_df) + 1)
+                st.dataframe(
+                    k_sick_df[["No.", "Tanggal", "Shift", "Status", "Klasifikasi"]],
+                    use_container_width=True,
+                    height=min(60 + len(k_sick_df) * 35, 280),
+                    hide_index=True,
+                    column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
+                )
+
+    # ── Expander 3: Leave (AL / ½AL / WFA) ──
     leave_label = f"🏖️ Rincian Leave  —  🟣 AL: {n_al}  ·  🔵 WFA: {n_wfa}"
     with st.expander(leave_label, expanded=False):
         if n_al == 0 and n_wfa == 0:
             st.info("Tidak ada data AL / ½AL / WFA pada periode ini.")
         else:
             lc1, lc2, lc3 = st.columns(3)
-            n_full_al = len(detail_df[detail_df["Klasifikasi_raw"].apply(
-                lambda x: has_status(x, "AL")
-            )])
-            n_half_al = len(detail_df[detail_df["Klasifikasi_raw"].apply(
-                lambda x: has_status(x, "1/2 AL")
-            )])
+            n_full_al = len(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "AL"))])
+            n_half_al = len(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "1/2 AL"))])
             for (col, label, val, bg, bc, tc) in [
                 (lc1, "🟣 AL (Full)",      n_full_al, "#fdf4ff", "#a855f7", "#7e22ce"),
                 (lc2, "🩷 ½AL (Setengah)", n_half_al, "#fff1f2", "#fb7185", "#be123c"),
@@ -402,7 +456,6 @@ def show_daily_detail(account, nama, rules, file_bytes):
 </div>""", unsafe_allow_html=True)
 
             leave_combined = pd.concat([al_df, wfa_df]).sort_values("Tanggal").reset_index(drop=True)
-            # Deduplikasi: satu hari bisa muncul di al_df dan wfa_df sekaligus (jika dual-count)
             leave_combined = leave_combined.drop_duplicates(subset=["Tanggal"]).reset_index(drop=True)
             leave_combined["No."] = range(1, len(leave_combined) + 1)
             st.dataframe(
@@ -410,12 +463,10 @@ def show_daily_detail(account, nama, rules, file_bytes):
                 use_container_width=True,
                 height=min(60 + len(leave_combined) * 35, 380),
                 hide_index=True,
-                column_config={
-                    "Status": st.column_config.TextColumn("Attendance Results", width="large"),
-                },
+                column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
             )
 
-    # ── Expander 3: Rincian per Tipe Shift ──
+    # ── Expander 4: Rincian per Tipe Shift ──
     tipe_counts = detail_df["Tipe"].value_counts()
     s1_n = tipe_counts.get("S1", 0)
     s2_n = tipe_counts.get("S2", 0)
@@ -446,7 +497,7 @@ def show_daily_detail(account, nama, rules, file_bytes):
         with tab_s2: _render_tipe_tab("S2")
         with tab_h:  _render_tipe_tab("H")
 
-    # ── Expander 4: Detail Lengkap ──
+    # ── Expander 5: Detail Lengkap ──
     with st.expander(f"🗂️ Detail Lengkap per Hari  —  {len(detail_df)} hari tercatat", expanded=False):
         TIPE_EMOJI = {"S1": "🌅 S1", "S2": "🌙 S2", "H": "🏖️ H"}
         dd = detail_df.copy()
@@ -457,9 +508,7 @@ def show_daily_detail(account, nama, rules, file_bytes):
             use_container_width=True,
             height=420,
             hide_index=True,
-            column_config={
-                "Status": st.column_config.TextColumn("Status Absensi", width="large"),
-            },
+            column_config={"Status": st.column_config.TextColumn("Status Absensi", width="large")},
         )
 
     st.caption("Klik di luar kotak ini untuk menutup")
@@ -488,7 +537,6 @@ def process_file(file_bytes):
     df = df[required].dropna(subset=["Account", "Rules"])
     df = df[~df["Account"].astype(str).str.strip().isin(["", "--"])]
 
-    # classify() sekarang return list — simpan ke _statuses
     df["_statuses"] = df.apply(
         lambda r: classify(
             r["Earliest"], r["Shift"], r["Attendance results"],
@@ -498,18 +546,14 @@ def process_file(file_bytes):
         axis=1,
     )
 
-    # Rules: ambil nilai terbanyak per Account
     all_employees = (
         df.groupby("Account")["Rules"]
         .agg(lambda x: x.mode()[0])
         .reset_index()
     )
 
-    # Baris yang punya klasifikasi (sebelum explode, untuk stats)
     df_classified = df[df["_statuses"].notna()].copy()
-
-    # Explode list → setiap status jadi baris sendiri, lalu pivot
-    df_exploded = df_classified.explode("_statuses").rename(columns={"_statuses": "Status"})
+    df_exploded   = df_classified.explode("_statuses").rename(columns={"_statuses": "Status"})
 
     pivot = df_exploded.pivot_table(
         index="Account",
@@ -520,13 +564,13 @@ def process_file(file_bytes):
     ).reset_index()
     pivot.columns.name = None
 
-    # Pastikan semua kolom status ada
-    for col in ["Normal", "Late", "1/2 UL", "AL", "1/2 AL", "WFA"]:
+    # Pastikan semua kolom status ada (termasuk yang baru)
+    for col in ["Normal", "Late", "1/2 UL", "AL", "1/2 AL", "WFA", "DW", "K", "Off"]:
         if col not in pivot.columns:
             pivot[col] = 0
 
     pivot = all_employees.merge(pivot, on="Account", how="left").fillna(0)
-    for col in ["Normal", "Late", "1/2 UL", "AL", "1/2 AL", "WFA"]:
+    for col in ["Normal", "Late", "1/2 UL", "AL", "1/2 AL", "WFA", "DW", "K", "Off"]:
         pivot[col] = pivot[col].astype(int)
 
     name_map = df.groupby("Account")["Name"].first()
@@ -535,7 +579,8 @@ def process_file(file_bytes):
     pivot = pivot.sort_values(["Rules", "Nama"]).reset_index(drop=True)
     pivot.insert(0, "No.", range(1, len(pivot) + 1))
     result = pivot[["No.", "Nama", "Account", "Rules",
-                    "Normal", "Late", "1/2 UL", "AL", "1/2 AL", "WFA"]].copy()
+                    "Normal", "Late", "1/2 UL", "AL", "1/2 AL", "WFA",
+                    "DW", "K", "Off"]].copy()
 
     stats = {
         "total_rows": len(df),
@@ -566,6 +611,9 @@ def to_excel_bytes(df, time_range=""):
     PURPLE = PatternFill("solid", fgColor="FDF4FF")
     PINK   = PatternFill("solid", fgColor="FFF1F2")
     CYAN   = PatternFill("solid", fgColor="F0F9FF")
+    ORANGE = PatternFill("solid", fgColor="FFF7ED")
+    ROSE   = PatternFill("solid", fgColor="FDF2F8")
+    SLATE  = PatternFill("solid", fgColor="F8FAFC")
 
     thin   = Side(style="thin", color="CBD5E1")
     BORDER = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -573,7 +621,7 @@ def to_excel_bytes(df, time_range=""):
     LEFT   = Alignment(horizontal="left",   vertical="center")
 
     # Title
-    ws.merge_cells("A1:J1")
+    ws.merge_cells("A1:M1")
     ws["A1"] = "Summary Attendance"
     ws["A1"].font      = Font(name="Calibri", bold=True, color="FFFFFF", size=14)
     ws["A1"].fill      = DARK
@@ -581,7 +629,7 @@ def to_excel_bytes(df, time_range=""):
     ws.row_dimensions[1].height = 30
 
     # Subtitle
-    ws.merge_cells("A2:J2")
+    ws.merge_cells("A2:M2")
     ws["A2"] = f"Time Range: {time_range}" if time_range else "Rekap Absensi"
     ws["A2"].font      = Font(name="Calibri", color="FFFFFF", size=9, italic=True)
     ws["A2"].fill      = BLUE
@@ -590,7 +638,8 @@ def to_excel_bytes(df, time_range=""):
 
     # Header
     headers = ["No.", "Nama", "Account", "Rules",
-               "Normal", "Late", "1/2 UL", "AL", "1/2 AL", "WFA"]
+               "Normal", "Late", "1/2 UL", "AL", "1/2 AL", "WFA",
+               "DW", "K", "Off"]
     for ci, h in enumerate(headers, 1):
         c = ws.cell(row=3, column=ci, value=h)
         c.font      = Font(name="Calibri", bold=True, color="FFFFFF", size=10)
@@ -606,14 +655,18 @@ def to_excel_bytes(df, time_range=""):
         8:  (PURPLE, "7E22CE"),
         9:  (PINK,   "BE123C"),
         10: (CYAN,   "0369A1"),
+        11: (ORANGE, "EA580C"),
+        12: (ROSE,   "DB2777"),
+        13: (SLATE,  "475569"),
     }
+
+    ALL_STATUS_COLS = ["Normal", "Late", "1/2 UL", "AL", "1/2 AL", "WFA", "DW", "K", "Off"]
 
     for ri, (_, row) in enumerate(df.iterrows()):
         er = ri + 4
         base_fill = ALT if ri % 2 == 0 else WHITE
-        vals = [row["No."], row["Nama"], row["Account"], row["Rules"],
-                row["Normal"], row["Late"], row["1/2 UL"],
-                row["AL"], row["1/2 AL"], row["WFA"]]
+        vals = [row["No."], row["Nama"], row["Account"], row["Rules"]] + \
+               [row.get(c, 0) for c in ALL_STATUS_COLS]
         for ci, v in enumerate(vals, 1):
             c = ws.cell(row=er, column=ci, value=v)
             c.border = BORDER
@@ -638,7 +691,7 @@ def to_excel_bytes(df, time_range=""):
     ws[f"A{tr}"].fill      = DARK
     ws[f"A{tr}"].alignment = CENTER
     ws[f"A{tr}"].border    = BORDER
-    for ci in range(5, 11):
+    for ci in range(5, 14):
         c       = ws.cell(row=tr, column=ci)
         c.value = f"=SUM({get_column_letter(ci)}4:{get_column_letter(ci)}{tr-1})"
         c.font  = Font(name="Calibri", bold=True, color="FFFFFF", size=10)
@@ -646,11 +699,11 @@ def to_excel_bytes(df, time_range=""):
         c.alignment = CENTER
         c.border    = BORDER
 
-    for ci, w in enumerate([6, 32, 24, 28, 10, 10, 8, 8, 8, 8], 1):
+    for ci, w in enumerate([6, 32, 24, 28, 10, 10, 8, 8, 8, 8, 8, 8, 8], 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
 
     ws.freeze_panes    = "A4"
-    ws.auto_filter.ref = f"A3:J{tr-1}"
+    ws.auto_filter.ref = f"A3:M{tr-1}"
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -665,7 +718,7 @@ st.markdown("""
 <div class="app-header">
   <div class="badge">HR TOOLS</div>
   <h1>🗓️ Absensi Rekap Generator</h1>
-  <p>Upload file Excel absensi → Hitung Normal / Late / K / AL / WFA per karyawan → Download hasil</p>
+  <p>Upload file Excel absensi → Hitung Normal / Late / K / AL / WFA / DW per karyawan → Download hasil</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -701,54 +754,84 @@ with col_info:
   <table style="width:100%;border-collapse:collapse;margin-bottom:1rem;">
     <tr style="background:#f1f5f9;">
       <td style="padding:0.35rem 0.6rem;border-radius:6px 0 0 6px;font-weight:600;white-space:nowrap;">✅ Normal</td>
-      <td style="padding:0.35rem 0.6rem;">Att Results mengandung kata <code>"Normal"</code>, atau jam masuk ≤ jam mulai shift</td>
+      <td style="padding:0.35rem 0.6rem;">Att Results mengandung kata <code>"Normal"</code> (bukan rest/not-scheduled), dan tidak ada kondisi khusus leave</td>
     </tr>
     <tr>
       <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🟡 Late</td>
-      <td style="padding:0.35rem 0.6rem;">Att Results <b>tidak</b> mengandung "Normal", terlambat <b>≤ 2 jam</b> dari shift</td>
+      <td style="padding:0.35rem 0.6rem;">Att Results <b>tidak</b> mengandung "Normal" + Punch Out lebih cepat <b>≤ 2 jam</b> dari jam selesai shift</td>
     </tr>
     <tr style="background:#f1f5f9;">
-      <td style="padding:0.35rem 0.6rem;border-radius:6px 0 0 6px;font-weight:600;white-space:nowrap;">🔴 ½UL</td>
-      <td style="padding:0.35rem 0.6rem;">Att Results <b>tidak</b> mengandung "Normal", terlambat <b>&gt; 2 jam</b> dari shift</td>
+      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🔴 ½UL</td>
+      <td style="padding:0.35rem 0.6rem;">Att Results <b>tidak</b> mengandung "Normal" + <b>salah satu dari:</b> (a) Punch Out lebih cepat <b>&gt; 2 jam</b> dari jadwal, atau (b) hanya ada satu punch (in tanpa out, atau out tanpa in)</td>
     </tr>
     <tr>
+      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🟠 DW</td>
+      <td style="padding:0.35rem 0.6rem;">Att Results mengandung kata <code>"Absence"</code></td>
+    </tr>
+    <tr style="background:#f1f5f9;">
+      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🩺 K</td>
+      <td style="padding:0.35rem 0.6rem;">Leave mengandung <code>"K-Sick W Letter"</code>. Jika att juga Normal → dual-count <b>Normal + K</b></td>
+    </tr>
+    <tr>
+      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">⬜ Off</td>
+      <td style="padding:0.35rem 0.6rem;">Att Results bernilai tepat <code>"Normal (rest)"</code> atau <code>"Normal (not scheduled)"</code></td>
+    </tr>
+    <tr style="background:#f1f5f9;">
       <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🟣 AL</td>
-      <td style="padding:0.35rem 0.6rem;">Leave = <code>AnnualLeave</code> + Att Results mengandung "Normal" + <b>tidak ada punch</b> sama sekali</td>
-    </tr>
-    <tr style="background:#f1f5f9;">
-      <td style="padding:0.35rem 0.6rem;border-radius:6px 0 0 6px;font-weight:600;white-space:nowrap;">🩷 ½AL</td>
-      <td style="padding:0.35rem 0.6rem;">Leave = <code>AnnualLeave</code> + Att Results mengandung "Normal" + <b>ada punch in &amp; out</b></td>
+      <td style="padding:0.35rem 0.6rem;">Leave = <code>AnnualLeave</code> + Att Normal + <b>tidak ada punch</b> sama sekali</td>
     </tr>
     <tr>
+      <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🩷 ½AL</td>
+      <td style="padding:0.35rem 0.6rem;">Leave = <code>AnnualLeave</code> + Att Normal + <b>ada punch in &amp; out</b></td>
+    </tr>
+    <tr style="background:#f1f5f9;">
       <td style="padding:0.35rem 0.6rem;font-weight:600;white-space:nowrap;">🔵 WFA</td>
-      <td style="padding:0.35rem 0.6rem;">Leave mengandung <code>WFH</code> / <code>WorkFromHome</code> + Att Results mengandung "Normal"</td>
+      <td style="padding:0.35rem 0.6rem;">Leave mengandung <code>WFH</code> / <code>WorkFromHome</code> + Att Normal</td>
     </tr>
   </table>
 
   <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">🔀 Alur Keputusan</div>
   <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:0.7rem 1rem;font-family:'DM Mono',monospace;font-size:0.78rem;line-height:2;margin-bottom:1rem;color:#475569;">
-    Att Results mengandung "Normal"?<br>
-    &nbsp;├─ Ya + Leave = AnnualLeave → <b>Normal + AL</b> atau <b>Normal + ½AL</b><br>
-    &nbsp;├─ Ya + Leave = WFH/WorkFromHome → <b>Normal + WFA</b><br>
-    &nbsp;└─ Ya (lainnya) → <b>Normal</b><br>
-    Att Results TIDAK mengandung "Normal"?<br>
-    &nbsp;├─ Terlambat ≤ 2 jam → <b>Late</b><br>
-    &nbsp;├─ Terlambat &gt; 2 jam → <b>½UL</b><br>
-    &nbsp;└─ Tidak ada punch → <i>diabaikan</i>
+    Att = "Normal (rest)" / "Normal (not scheduled)"? → <b>Off</b><br>
+    Att mengandung "Absence"? → <b>DW</b><br>
+    Leave mengandung "K-Sick W Letter"?<br>
+    &nbsp;├─ Att juga Normal → <b>Normal + K</b><br>
+    &nbsp;└─ Att tidak Normal → <b>K</b><br>
+    Att mengandung "Normal" (lainnya)?<br>
+    &nbsp;├─ Leave = AnnualLeave → <b>Normal + AL</b> / <b>Normal + ½AL</b><br>
+    &nbsp;├─ Leave = WFH/WorkFromHome → <b>Normal + WFA</b><br>
+    &nbsp;└─ Leave lain / tanpa leave → <b>Normal</b><br>
+    Att TIDAK mengandung "Normal" (Early Departure, Missed Punch, dll)?<br>
+    &nbsp;├─ Hanya satu punch → <b>½UL</b><br>
+    &nbsp;├─ Tidak ada punch → <i>diabaikan</i><br>
+    &nbsp;├─ Punch Out lebih awal &gt; 2 jam → <b>½UL</b><br>
+    &nbsp;├─ Punch Out lebih awal ≤ 2 jam → <b>Late</b><br>
+    &nbsp;└─ Punch Out tepat/lewat jadwal → <b>Normal</b>
   </div>
 
   <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">🔁 Dual-Count</div>
   <div style="background:#eff6ff;border-radius:8px;padding:0.6rem 1rem;margin-bottom:1rem;font-size:0.82rem;border-left:3px solid #3b82f6;">
     Satu hari bisa menghasilkan <b>2 status sekaligus</b>:<br>
-    • Normal (Leave) + WFH → dihitung sebagai <b>Normal</b> dan <b>WFA</b><br>
-    • Normal (Leave) + AnnualLeave + ada punch → dihitung sebagai <b>Normal</b> dan <b>½AL</b><br>
-    • Normal (Leave) + AnnualLeave + tanpa punch → dihitung sebagai <b>Normal</b> dan <b>AL</b>
+    • Normal + WFH → <b>Normal</b> dan <b>WFA</b><br>
+    • Normal + AnnualLeave + ada punch → <b>Normal</b> dan <b>½AL</b><br>
+    • Normal + AnnualLeave + tanpa punch → <b>Normal</b> dan <b>AL</b><br>
+    • Normal + K-Sick W Letter → <b>Normal</b> dan <b>K</b>
+  </div>
+
+  <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">📐 Logika Late &amp; ½UL</div>
+  <div style="background:#fefce8;border-radius:8px;padding:0.6rem 1rem;margin-bottom:1rem;font-size:0.82rem;border-left:3px solid #eab308;">
+    Klasifikasi Late/½UL didasarkan pada <b>Punch Out vs jam selesai shift</b>:<br>
+    • <b>Late</b>: Punch Out tercatat lebih cepat ≤ 120 menit dari jadwal selesai shift<br>
+    • <b>½UL (Kondisi 1)</b>: Punch Out lebih cepat &gt; 120 menit dari jadwal selesai shift<br>
+    • <b>½UL (Kondisi 2)</b>: Hanya ada satu punch (in tanpa out, atau out tanpa in)<br>
+    Shift overnight (mis. 19:00–05:00) dinormalisasi secara otomatis.
   </div>
 
   <div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;text-transform:uppercase;letter-spacing:0.06em;">⚠️ Pengecualian</div>
   <div style="background:#fef9ec;border-radius:8px;padding:0.6rem 1rem;font-size:0.82rem;border-left:3px solid #f59e0b;">
-    • Shift <code>Rest</code> / <code>Not scheduled</code> / <code>--</code> / kosong → <b>dilewati</b>, tidak dihitung<br>
-    • Tidak ada punch in → Late/½UL tidak bisa dihitung → <b>diabaikan</b>
+    • Shift <code>Rest</code> / <code>Not scheduled</code> / <code>--</code> / kosong → <b>dilewati</b> (kecuali jika att = "Normal (rest)" → Off)<br>
+    • Att = "Normal (rest)" / "Normal (not scheduled)" → <b>Off</b>, tidak masuk Normal/Late<br>
+    • Tidak ada punch sama sekali (non-Normal) → <b>diabaikan</b>, tidak diklasifikasi
   </div>
 
 </div>
@@ -788,7 +871,6 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
             df_raw = df_raw.dropna(subset=["Account", "Rules"])
             df_raw = df_raw[~df_raw["Account"].astype(str).str.strip().isin(["", "--"])]
             df_raw["_tipe_shift"] = df_raw["Shift"].apply(classify_shift_type)
-            # classify_str() → join list jadi string untuk DB
             df_raw["_status_klasifikasi"] = df_raw.apply(
                 lambda r: classify_str(
                     r["Earliest"], r["Shift"], r["Attendance results"],
@@ -800,12 +882,14 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
         except Exception as e:
             st.warning(f"⚠️ Gagal simpan ke database: {e}")
     else:
-        df_result = get_rekap(periode_dipilih)
-        df_result = df_result.rename(columns={
+        df_raw_db = get_rekap(periode_dipilih)
+        df_result = df_raw_db.rename(columns={
             "nama": "Nama", "account": "Account", "rules": "Rules",
-            "normal": "Normal", "late": "Late", "k": "1/2 UL",
+            "normal": "Normal", "late": "Late", "half_ul": "1/2 UL",
+            "half_al": "1/2 AL", "al": "AL", "wfa": "WFA",
+            "dw": "DW", "k_sick": "K", "off_count": "Off",
         })
-        for col in ["AL", "1/2 AL", "WFA", "1/2 UL"]:
+        for col in ["Normal", "Late", "1/2 UL", "AL", "1/2 AL", "WFA", "DW", "K", "Off"]:
             if col not in df_result.columns:
                 df_result[col] = 0
         file_bytes = None
@@ -825,6 +909,9 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
     total_al  = int(df_result["AL"].sum())
     total_hal = int(df_result["1/2 AL"].sum())
     total_wfa = int(df_result["WFA"].sum())
+    total_dw  = int(df_result["DW"].sum())
+    total_ks  = int(df_result["K"].sum())
+    total_off = int(df_result["Off"].sum())
     total_e   = stats["employees"]
 
     st.markdown(f"""
@@ -834,12 +921,20 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
     <div class="value">{total_n:,}</div>
   </div>
   <div class="metric-card metric-late">
-    <div class="label">Total Late</div>
+    <div class="label">Late (Pulang ≤2j)</div>
     <div class="value">{total_l:,}</div>
   </div>
   <div class="metric-card metric-k">
-    <div class="label">½ UL (&gt;2 jam)</div>
+    <div class="label">½ UL (&gt;2j / 1 Punch)</div>
     <div class="value">{total_k:,}</div>
+  </div>
+  <div class="metric-card metric-dw">
+    <div class="label">DW (Absence)</div>
+    <div class="value">{total_dw:,}</div>
+  </div>
+  <div class="metric-card metric-ksick">
+    <div class="label">K-Sick W Letter</div>
+    <div class="value">{total_ks:,}</div>
   </div>
   <div class="metric-card metric-al">
     <div class="label">Annual Leave (AL)</div>
@@ -852,6 +947,10 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
   <div class="metric-card metric-wfa">
     <div class="label">WFA (Work from Home)</div>
     <div class="value">{total_wfa:,}</div>
+  </div>
+  <div class="metric-card metric-off">
+    <div class="label">Off (Rest/Unscheduled)</div>
+    <div class="value">{total_off:,}</div>
   </div>
   <div class="metric-card metric-total">
     <div class="label">Jumlah Karyawan</div>
@@ -870,7 +969,7 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
     with fcol2:
         search = st.text_input("Cari Nama / Account", placeholder="Ketik nama atau account…")
     with fcol3:
-        show_late_only = st.checkbox("Hanya Late/K", value=False)
+        show_late_only = st.checkbox("Hanya Late/K/DW", value=False)
 
     df_show = df_result.copy()
     if sel_rules:
@@ -882,7 +981,9 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
         )
         df_show = df_show[mask]
     if show_late_only:
-        df_show = df_show[(df_show["Late"] > 0) | (df_show["1/2 UL"] > 0)]
+        df_show = df_show[
+            (df_show["Late"] > 0) | (df_show["1/2 UL"] > 0) | (df_show["DW"] > 0)
+        ]
 
     df_show = df_show.copy()
     df_show["No."] = range(1, len(df_show) + 1)
@@ -903,9 +1004,12 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
             "Normal" : st.column_config.NumberColumn("Normal ✅", format="%d", width="small"),
             "Late"   : st.column_config.NumberColumn("Late 🟡", format="%d", width="small"),
             "1/2 UL" : st.column_config.NumberColumn("½UL 🔴", format="%d", width="small"),
+            "DW"     : st.column_config.NumberColumn("DW 🟠", format="%d", width="small"),
+            "K"      : st.column_config.NumberColumn("K 🩺", format="%d", width="small"),
             "AL"     : st.column_config.NumberColumn("AL 🟣", format="%d", width="small"),
             "1/2 AL" : st.column_config.NumberColumn("½AL 🩷", format="%d", width="small"),
             "WFA"    : st.column_config.NumberColumn("WFA 🔵", format="%d", width="small"),
+            "Off"    : st.column_config.NumberColumn("Off ⬜", format="%d", width="small"),
         },
     )
 
@@ -972,12 +1076,15 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
             Normal=("Normal", "sum"),
             Late=("Late", "sum"),
             **{"1/2 UL": ("1/2 UL", "sum")},
+            DW=("DW", "sum"),
+            K=("K", "sum"),
             AL=("AL", "sum"),
             WFA=("WFA", "sum"),
+            Off=("Off", "sum"),
         ).reset_index().sort_values("1/2 UL", ascending=False)
         total_absen = grp["Normal"] + grp["Late"] + grp["1/2 UL"]
-        grp["Late Rate"] = (grp["Late"]   / total_absen * 100).round(1)
-        grp["½UL Rate"]  = (grp["1/2 UL"] / total_absen * 100).round(1)
+        grp["Late Rate"] = (grp["Late"]   / total_absen.replace(0, 1) * 100).round(1)
+        grp["½UL Rate"]  = (grp["1/2 UL"] / total_absen.replace(0, 1) * 100).round(1)
         st.dataframe(
             grp,
             use_container_width=True,
@@ -988,8 +1095,11 @@ if uploaded is not None or periode_dipilih != "— Upload file baru —":
                 "Normal"   : st.column_config.NumberColumn("Normal ✅", format="%d"),
                 "Late"     : st.column_config.NumberColumn("Late 🟡", format="%d"),
                 "1/2 UL"   : st.column_config.NumberColumn("½UL 🔴", format="%d"),
+                "DW"       : st.column_config.NumberColumn("DW 🟠", format="%d"),
+                "K"        : st.column_config.NumberColumn("K 🩺", format="%d"),
                 "AL"       : st.column_config.NumberColumn("AL 🟣", format="%d"),
                 "WFA"      : st.column_config.NumberColumn("WFA 🔵", format="%d"),
+                "Off"      : st.column_config.NumberColumn("Off ⬜", format="%d"),
                 "Late Rate": st.column_config.NumberColumn("% Late", format="%.1f%%"),
                 "½UL Rate" : st.column_config.NumberColumn("% ½UL", format="%.1f%%"),
             },

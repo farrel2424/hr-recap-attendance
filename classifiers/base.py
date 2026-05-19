@@ -33,6 +33,25 @@ def parse_shift_start(shift_text) -> int | None:
     return None
 
 
+def parse_shift_end(shift_text) -> int | None:
+    """
+    Ambil jam selesai shift dalam menit.
+    Mendukung format 'WD：08:30-17:00' dan overnight 'Night：19:00-Next day 05:00'.
+    Return None jika tidak valid atau shift tidak terjadwal.
+    """
+    if not isinstance(shift_text, str):
+        return None
+    s = shift_text.strip()
+    if s in SKIP_SHIFTS:
+        return None
+    # Ambil semua pasangan HH:MM, pilih yang terakhir (jam selesai)
+    matches = re.findall(r'(\d{1,2}):(\d{2})', s)
+    if len(matches) >= 2:
+        h, m = int(matches[-1][0]), int(matches[-1][1])
+        return h * 60 + m
+    return None
+
+
 def parse_time_to_minutes(val) -> int | None:
     """Konversi berbagai format waktu ke menit sejak tengah malam."""
     if val is None:

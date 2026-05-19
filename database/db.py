@@ -5,15 +5,13 @@ import os
 DB_PATH = os.path.join(os.path.dirname(__file__), "absensi.db")
 
 def get_conn():
-    """Koneksi dengan foreign key enforcement dan WAL mode untuk performa."""
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row   # hasil query bisa diakses by nama kolom
+    conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")  # aman untuk concurrent read
+    conn.execute("PRAGMA journal_mode = WAL")
     return conn
 
 def init_db():
-    """Buat tabel jika belum ada. Aman dipanggil berulang kali."""
     with get_conn() as conn:
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS karyawan (
@@ -27,15 +25,15 @@ def init_db():
         CREATE TABLE IF NOT EXISTS absensi_harian (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
             karyawan_id         INTEGER NOT NULL REFERENCES karyawan(id),
-            tanggal             TEXT NOT NULL,          -- format: YYYY-MM-DD
+            tanggal             TEXT NOT NULL,
             shift               TEXT,
-            tipe_shift          TEXT,                   -- S1 / S2 / H
+            tipe_shift          TEXT,
             jam_masuk           TEXT,
             jam_keluar          TEXT,
             jam_kerja           REAL DEFAULT 0,
             status_absensi      TEXT,
-            status_klasifikasi  TEXT,                   -- Normal / Late / K / NULL
-            periode             TEXT NOT NULL,          -- format: YYYY-MM
+            status_klasifikasi  TEXT,
+            periode             TEXT NOT NULL,
             UNIQUE(karyawan_id, tanggal)
         );
 
@@ -47,16 +45,8 @@ def init_db():
         """)
 
 def save_periode(df_raw, periode: str):
-    """
-    file_bytes : bytes mentah dari uploaded.read()
-    df_result  : DataFrame hasil process_file (untuk ambil daftar Account valid)
-    """
     with get_conn() as conn:
-        # Hapus data periode ini jika sudah pernah diimport
-        conn.execute("""
-            DELETE FROM absensi_harian
-            WHERE periode = ?
-        """, (periode,))
+        conn.execute("DELETE FROM absensi_harian WHERE periode = ?", (periode,))
 
         for _, r in df_raw.iterrows():
             account = str(r.get("Account", "")).strip()
@@ -67,7 +57,6 @@ def save_periode(df_raw, periode: str):
             if not account or account in ("", "--"):
                 continue
 
-            # Upsert karyawan (bisa saja nama/rules berubah)
             conn.execute("""
                 INSERT INTO karyawan(account, nama, rules, department)
                 VALUES (?, ?, ?, ?)
@@ -81,7 +70,6 @@ def save_periode(df_raw, periode: str):
                 "SELECT id FROM karyawan WHERE account = ?", (account,)
             ).fetchone()["id"]
 
-            # Parse tanggal dari "2026/04/30 星期四" → "2026-04-30"
             import re
             raw_time = str(r.get("Time", ""))
             m = re.search(r'(\d{4})/(\d{2})/(\d{2})', raw_time)
@@ -98,36 +86,47 @@ def save_periode(df_raw, periode: str):
                 karyawan_id,
                 tanggal,
                 str(r.get("Shift", "")).strip(),
-                r.get("_tipe_shift"),          # kolom hasil classify_shift_type
+                r.get("_tipe_shift"),
                 str(r.get("Earliest", "")).strip(),
                 str(r.get("Latest", "")).strip(),
                 (lambda v: float(v) if str(v).replace('.','',1).lstrip('-').isdigit() else 0.0)(r.get("Actual working hours(Hour)", 0) or 0),
                 str(r.get("Attendance results", "")).strip(),
-                r.get("_status_klasifikasi"),  # kolom hasil classify()
+                r.get("_status_klasifikasi"),
                 periode,
             ))
 
 
 def get_periodes():
-    """Kembalikan list periode yang sudah diimport, urut terbaru dulu."""
     with get_conn() as conn:
         rows = conn.execute("""
-            SELECT DISTINCT periode
-            FROM absensi_harian
-            ORDER BY periode DESC
+            SELECT DISTINCT periode FROM absensi_harian ORDER BY periode DESC
         """).fetchall()
     return [r["periode"] for r in rows]
 
 
 def get_rekap(periode: str):
-    """Rekap Normal/Late/K per karyawan untuk satu periode."""
+    """Rekap per karyawan untuk satu periode — mencakup semua status."""
     with get_conn() as conn:
         rows = conn.execute("""
             SELECT
                 k.nama, k.account, k.rules,
-                SUM(CASE WHEN a.status_klasifikasi = 'Normal' THEN 1 ELSE 0 END) AS normal,
-                SUM(CASE WHEN a.status_klasifikasi = 'Late'   THEN 1 ELSE 0 END) AS late,
-                SUM(CASE WHEN a.status_klasifikasi = 'K'      THEN 1 ELSE 0 END) AS k
+                SUM(CASE WHEN a.status_klasifikasi LIKE '%Normal%'
+                         AND a.status_klasifikasi NOT LIKE '%DW%'
+                         AND a.status_klasifikasi NOT LIKE '%Off%'
+                         THEN 1 ELSE 0 END) AS normal,
+                SUM(CASE WHEN a.status_klasifikasi LIKE '%Late%'   THEN 1 ELSE 0 END) AS late,
+                SUM(CASE WHEN a.status_klasifikasi LIKE '%1/2 UL%' THEN 1 ELSE 0 END) AS half_ul,
+                SUM(CASE WHEN a.status_klasifikasi LIKE '%1/2 AL%' THEN 1 ELSE 0 END) AS half_al,
+                SUM(CASE WHEN a.status_klasifikasi LIKE '%AL%'
+                         AND a.status_klasifikasi NOT LIKE '%1/2 AL%'
+                         THEN 1 ELSE 0 END) AS al,
+                SUM(CASE WHEN a.status_klasifikasi LIKE '%WFA%'   THEN 1 ELSE 0 END) AS wfa,
+                SUM(CASE WHEN a.status_klasifikasi LIKE '%DW%'    THEN 1 ELSE 0 END) AS dw,
+                SUM(CASE WHEN a.status_klasifikasi = 'K'
+                         OR  a.status_klasifikasi LIKE '%/K'
+                         OR  a.status_klasifikasi LIKE 'K/%'
+                         THEN 1 ELSE 0 END) AS k_sick,
+                SUM(CASE WHEN a.status_klasifikasi LIKE '%Off%'   THEN 1 ELSE 0 END) AS off_count
             FROM karyawan k
             JOIN absensi_harian a ON a.karyawan_id = k.id
             WHERE a.periode = ?
@@ -139,7 +138,6 @@ def get_rekap(periode: str):
 
 
 def get_daily(account: str, periode: str):
-    """Rincian harian satu karyawan untuk satu periode."""
     with get_conn() as conn:
         rows = conn.execute("""
             SELECT
