@@ -33,6 +33,7 @@ def init_db():
             jam_kerja           REAL DEFAULT 0,
             status_absensi      TEXT,
             status_klasifikasi  TEXT,
+            leave_app           TEXT,
             periode             TEXT NOT NULL,
             UNIQUE(karyawan_id, tanggal)
         );
@@ -43,6 +44,13 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_karyawan_tanggal
             ON absensi_harian(karyawan_id, tanggal);
         """)
+
+        # Migrasi: tambah kolom leave_app jika belum ada (untuk DB lama)
+        try:
+            conn.execute("ALTER TABLE absensi_harian ADD COLUMN leave_app TEXT")
+        except Exception:
+            pass  # Kolom sudah ada, abaikan
+
 
 def save_periode(df_raw, periode: str):
     with get_conn() as conn:
@@ -77,11 +85,13 @@ def save_periode(df_raw, periode: str):
             if not tanggal:
                 continue
 
+            leave_val = str(r.get("Leave & Overtime Application", "") or "").strip()
+
             conn.execute("""
                 INSERT OR REPLACE INTO absensi_harian
                     (karyawan_id, tanggal, shift, tipe_shift, jam_masuk, jam_keluar,
-                     jam_kerja, status_absensi, status_klasifikasi, periode)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     jam_kerja, status_absensi, status_klasifikasi, leave_app, periode)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 karyawan_id,
                 tanggal,
@@ -92,6 +102,7 @@ def save_periode(df_raw, periode: str):
                 (lambda v: float(v) if str(v).replace('.','',1).lstrip('-').isdigit() else 0.0)(r.get("Actual working hours(Hour)", 0) or 0),
                 str(r.get("Attendance results", "")).strip(),
                 r.get("_status_klasifikasi"),
+                leave_val,
                 periode,
             ))
 
@@ -138,12 +149,13 @@ def get_rekap(periode: str):
 
 
 def get_daily(account: str, periode: str):
+    """Ambil semua data harian dari DB untuk satu karyawan + periode."""
     with get_conn() as conn:
         rows = conn.execute("""
             SELECT
                 a.tanggal, a.shift, a.tipe_shift,
                 a.jam_masuk, a.jam_keluar, a.jam_kerja,
-                a.status_absensi, a.status_klasifikasi
+                a.status_absensi, a.status_klasifikasi, a.leave_app
             FROM absensi_harian a
             JOIN karyawan k ON k.id = a.karyawan_id
             WHERE k.account = ? AND a.periode = ?
