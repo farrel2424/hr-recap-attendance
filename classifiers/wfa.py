@@ -3,9 +3,9 @@
 Klasifikasi WFA — Work From Anywhere / Work From Home.
 
 Return:
-  ["Normal", "WFA"]  — selalu, karena dipanggil hanya saat att_result mengandung "Normal"
+  ["WFA"]  — selalu, bersifat standalone (tidak dual-count dengan S).
 """
 
 
 def classify(earliest_raw, latest_raw) -> list[str]:
-    return ["Normal", "WFA"]
+    return ["WFA"]

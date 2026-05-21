@@ -15,6 +15,9 @@ SKIP_SHIFTS     = {"Rest", "Not scheduled", "--", ""}
 K_THRESHOLD_MIN = 120   # 2 jam — batas Late vs ½UL
 _NOT_PUNCHED    = {"not punched", "--", ""}
 
+# Nilai att_result yang langsung menghasilkan S (exact match)
+S_ATT_RESULTS = {"Normal", "Normal（Correction of missed punch）"}
+
 
 # ──────────────────────────────────────────────────────────────
 # Helpers Parse
@@ -103,3 +106,19 @@ def classify_shift_type(shift_text) -> str | None:
     if any(kw in s_lower for kw in ["s2", "night", "malam"]):
         return "S2"
     return "S1"
+
+
+def is_zero_or_dash(val) -> bool:
+    """
+    True jika nilai kolom count dianggap nol/kosong:
+    "--", "0", "0.0", "" atau NaN.
+    Digunakan untuk cek kolom 'Number of absences(Count)' dan 'K-Sick W Letter'.
+    """
+    if val is None:
+        return True
+    if isinstance(val, float):
+        if pd.isna(val):
+            return True
+        return val == 0.0
+    s = str(val).strip()
+    return s in {"", "--", "0", "0.0", "nan"}

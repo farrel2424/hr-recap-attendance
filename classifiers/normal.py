@@ -1,14 +1,14 @@
 # classifiers/normal.py
 """
-Klasifikasi Normal — karyawan hadir tepat waktu atau lebih awal.
+Klasifikasi S (Shift) — karyawan hadir tepat waktu atau lebih awal.
 
-Return: ["Normal"]
+Return: ["S"]
 Dipanggil oleh __init__.classify() ketika:
-  - att_result mengandung "normal" tanpa leave, ATAU
-  - jam masuk ≤ jam mulai shift
+  - att_result bernilai TEPAT "Normal" atau "Normal（Correction of missed punch）"
+  - punch in ≤ jam mulai shift (tidak terlambat)
 """
 
 
 def classify() -> list[str]:
-    """Kembalikan status Normal."""
-    return ["Normal"]
+    """Kembalikan status S (Shift)."""
+    return ["S"]

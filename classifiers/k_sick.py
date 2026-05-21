@@ -2,24 +2,15 @@
 """
 Klasifikasi K — sakit dengan surat (K-Sick W Letter).
 
-Dipanggil oleh __init__.classify() ketika leave_app mengandung "K-Sick W Letter".
+Dipanggil oleh __init__.classify() ketika kolom "K-Sick W Letter"
+(K-Sick W Letter-病假有信) bernilai BUKAN "0", "--", atau kosong.
 
-Aturan dual-count:
-  - Jika att_result mengandung "Normal" → ["Normal", "K"]
-  - Jika att_result tidak mengandung "Normal" → ["K"]
+Output selalu bersifat standalone — tidak ada dual-count dengan S.
 
-Return: list satu atau dua elemen.
+Return: ["K"]
 """
 
 
-def classify(has_normal: bool) -> list[str]:
-    """
-    Args:
-        has_normal : True jika att_result mengandung kata "normal"
-
-    Returns:
-        ["Normal", "K"] atau ["K"]
-    """
-    if has_normal:
-        return ["Normal", "K"]
+def classify() -> list[str]:
+    """Kembalikan status K (Sakit dengan Surat)."""
     return ["K"]

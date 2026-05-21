@@ -116,28 +116,33 @@ def get_periodes():
 
 
 def get_rekap(periode: str):
-    """Rekap per karyawan untuk satu periode — mencakup semua status."""
+    """
+    Rekap per karyawan untuk satu periode.
+    status_klasifikasi menggunakan format baru (separator '|', tanpa prefix Normal):
+      S, Late, 1/2 UL, 1/2 AL, AL, WFA, DW, K, Off
+    """
     with get_conn() as conn:
         rows = conn.execute("""
             SELECT
                 k.nama, k.account, k.rules,
-                SUM(CASE WHEN a.status_klasifikasi LIKE '%Normal%'
-                         AND a.status_klasifikasi NOT LIKE '%DW%'
-                         AND a.status_klasifikasi NOT LIKE '%Off%'
+                SUM(CASE WHEN a.status_klasifikasi = 'S'
                          THEN 1 ELSE 0 END) AS normal,
-                SUM(CASE WHEN a.status_klasifikasi LIKE '%Late%'   THEN 1 ELSE 0 END) AS late,
-                SUM(CASE WHEN a.status_klasifikasi LIKE '%1/2 UL%' THEN 1 ELSE 0 END) AS half_ul,
-                SUM(CASE WHEN a.status_klasifikasi LIKE '%1/2 AL%' THEN 1 ELSE 0 END) AS half_al,
-                SUM(CASE WHEN a.status_klasifikasi LIKE '%AL%'
-                         AND a.status_klasifikasi NOT LIKE '%1/2 AL%'
+                SUM(CASE WHEN a.status_klasifikasi = 'Late'
+                         THEN 1 ELSE 0 END) AS late,
+                SUM(CASE WHEN a.status_klasifikasi = '1/2 UL'
+                         THEN 1 ELSE 0 END) AS half_ul,
+                SUM(CASE WHEN a.status_klasifikasi = '1/2 AL'
+                         THEN 1 ELSE 0 END) AS half_al,
+                SUM(CASE WHEN a.status_klasifikasi = 'AL'
                          THEN 1 ELSE 0 END) AS al,
-                SUM(CASE WHEN a.status_klasifikasi LIKE '%WFA%'   THEN 1 ELSE 0 END) AS wfa,
-                SUM(CASE WHEN a.status_klasifikasi LIKE '%DW%'    THEN 1 ELSE 0 END) AS dw,
+                SUM(CASE WHEN a.status_klasifikasi = 'WFA'
+                         THEN 1 ELSE 0 END) AS wfa,
+                SUM(CASE WHEN a.status_klasifikasi = 'DW'
+                         THEN 1 ELSE 0 END) AS dw,
                 SUM(CASE WHEN a.status_klasifikasi = 'K'
-                         OR  a.status_klasifikasi LIKE '%/K'
-                         OR  a.status_klasifikasi LIKE 'K/%'
                          THEN 1 ELSE 0 END) AS k_sick,
-                SUM(CASE WHEN a.status_klasifikasi LIKE '%Off%'   THEN 1 ELSE 0 END) AS off_count
+                SUM(CASE WHEN a.status_klasifikasi = 'Off'
+                         THEN 1 ELSE 0 END) AS off_count
             FROM karyawan k
             JOIN absensi_harian a ON a.karyawan_id = k.id
             WHERE a.periode = ?

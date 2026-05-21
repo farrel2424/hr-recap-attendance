@@ -2,7 +2,8 @@
 """
 Klasifikasi DW — karyawan tidak hadir (Absence).
 
-Dipanggil oleh __init__.classify() ketika att_result mengandung "Absence".
+Dipanggil oleh __init__.classify() ketika kolom
+"Number of absences(Count)" bernilai BUKAN "0", "--", atau kosong.
 
 Return: ["DW"]
 """

@@ -2,14 +2,15 @@
 """
 Klasifikasi Annual Leave (AL / ½AL).
 
-Aturan dual-count:
-  - Selalu masuk Normal (karena att_result mengandung "Normal")
-  - Jika ada punch in DAN punch out → tambah "1/2 AL"  (hadir setengah hari)
-  - Jika tidak ada punch sama sekali → tambah "AL"      (cuti penuh)
+Aturan:
+  - Jika ada punch in DAN punch out → "1/2 AL"  (hadir setengah hari)
+  - Jika tidak ada punch sama sekali → "AL"      (cuti penuh)
+
+Tidak ada dual-count dengan S — status bersifat standalone.
 
 Return:
-  ["Normal", "1/2 AL"]  — ada punch in & out
-  ["Normal", "AL"]      — tidak ada punch
+  ["1/2 AL"]  — ada punch in & out
+  ["AL"]      — tidak ada punch
 
 Dipanggil oleh __init__.classify() ketika:
   - att_result mengandung "normal" + "leave"
@@ -26,11 +27,11 @@ def classify(earliest_raw, latest_raw) -> list[str]:
         latest_raw   : nilai mentah jam keluar
 
     Returns:
-        ["Normal", "AL"] atau ["Normal", "1/2 AL"]
+        ["AL"] atau ["1/2 AL"]
     """
     has_in  = has_punch(earliest_raw)
     has_out = has_punch(latest_raw)
 
     if has_in and has_out:
-        return ["Normal", "1/2 AL"]
-    return ["Normal", "AL"]
+        return ["1/2 AL"]
+    return ["AL"]

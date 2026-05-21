@@ -15,4 +15,4 @@ OFF_RESULTS = {"Normal (rest)", "Normal (not scheduled)"}
 
 def classify() -> list[str]:
     """Kembalikan status Off."""
-    return ["Normal", "Off"]
+    return ["Off"]
