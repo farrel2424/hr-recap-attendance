@@ -88,17 +88,19 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     width: 70px; height: 70px; border-radius: 50%; opacity: 0.07; background: currentColor;
 }
 
-.metric-shift   { background: #f0fdf4; border-left: 4px solid #22c55e; }
-.metric-late    { background: #fffbeb; border-left: 4px solid #f59e0b; }
-.metric-k       { background: #fef2f2; border-left: 4px solid #ef4444; }
-.metric-total   { background: #eff6ff; border-left: 4px solid #3b82f6; }
-.metric-al      { background: #fdf4ff; border-left: 4px solid #a855f7; }
-.metric-half-al { background: #fff1f2; border-left: 4px solid #fb7185; }
-.metric-wfa     { background: #f0f9ff; border-left: 4px solid #0ea5e9; }
-.metric-dw      { background: #fff7ed; border-left: 4px solid #f97316; }
-.metric-ksick   { background: #fdf2f8; border-left: 4px solid #ec4899; }
-.metric-off     { background: #f8fafc; border-left: 4px solid #94a3b8; }
-.metric-ul      { background: #f0fdfa; border-left: 4px solid #14b8a6; }
+.metric-shift    { background: #f0fdf4; border-left: 4px solid #22c55e; }
+.metric-late     { background: #fffbeb; border-left: 4px solid #f59e0b; }
+.metric-k        { background: #fef2f2; border-left: 4px solid #ef4444; }
+.metric-total    { background: #eff6ff; border-left: 4px solid #3b82f6; }
+.metric-al       { background: #fdf4ff; border-left: 4px solid #a855f7; }
+.metric-half-al  { background: #fff1f2; border-left: 4px solid #fb7185; }
+.metric-wfa      { background: #f0f9ff; border-left: 4px solid #0ea5e9; }
+.metric-half-wfa { background: #eff6ff; border-left: 4px solid #60a5fa; }
+.metric-wfs      { background: #eef2ff; border-left: 4px solid #6366f1; }
+.metric-dw       { background: #fff7ed; border-left: 4px solid #f97316; }
+.metric-ksick    { background: #fdf2f8; border-left: 4px solid #ec4899; }
+.metric-off      { background: #f8fafc; border-left: 4px solid #94a3b8; }
+.metric-ul       { background: #f0fdfa; border-left: 4px solid #14b8a6; }
 
 .metric-card .label {
     font-size: 0.75rem; color: #64748b; font-weight: 600;
@@ -109,17 +111,19 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     font-size: 2.2rem; font-weight: 700;
     font-family: 'DM Mono', monospace; line-height: 1;
 }
-.metric-shift   .value { color: #16a34a; }
-.metric-late    .value { color: #d97706; }
-.metric-k       .value { color: #dc2626; }
-.metric-total   .value { color: #2563eb; }
-.metric-al      .value { color: #9333ea; }
-.metric-half-al .value { color: #e11d48; }
-.metric-wfa     .value { color: #0284c7; }
-.metric-dw      .value { color: #ea580c; }
-.metric-ksick   .value { color: #db2777; }
-.metric-off     .value { color: #64748b; }
-.metric-ul      .value { color: #0f766e; }
+.metric-shift    .value { color: #16a34a; }
+.metric-late     .value { color: #d97706; }
+.metric-k        .value { color: #dc2626; }
+.metric-total    .value { color: #2563eb; }
+.metric-al       .value { color: #9333ea; }
+.metric-half-al  .value { color: #e11d48; }
+.metric-wfa      .value { color: #0284c7; }
+.metric-half-wfa .value { color: #2563eb; }
+.metric-wfs      .value { color: #4338ca; }
+.metric-dw       .value { color: #ea580c; }
+.metric-ksick    .value { color: #db2777; }
+.metric-off      .value { color: #64748b; }
+.metric-ul       .value { color: #0f766e; }
 .metric-card .sub { font-size: 0.72rem; color: #94a3b8; font-weight: 400; margin-top: 0.35rem; }
 
 .stDownloadButton button {
@@ -161,32 +165,31 @@ def _find_al_col(df: pd.DataFrame)            -> str | None: return _find_col(df
 def _find_ul_col(df: pd.DataFrame)            -> str | None: return _find_col(df, "UL-Unpaid")
 def _find_duration_late_col(df: pd.DataFrame) -> str | None: return _find_col(df, "Duration of late arrival")
 def _find_duration_early_col(df: pd.DataFrame)-> str | None: return _find_col(df, "Duration of early departure")
+def _find_wfh_col(df: pd.DataFrame)           -> str | None: return _find_col(df, "WFH-WorkFromHome")
+def _find_offsite_col(df: pd.DataFrame)       -> str | None: return _find_col(df, "Offsite(Hour)")
 
 
 # ──────────────────────────────────────────────────────────────
 # Helper: ikon klasifikasi
 # ──────────────────────────────────────────────────────────────
 
-# Peta status → ikon
 _STATUS_ICON = {
-    "S"     : "📋",
-    "Late"  : "🕐",
-    "1/2 UL": "⛔",
-    "UL"    : "📋",
-    "AL"    : "🌴",
-    "1/2 AL": "🌗",
-    "WFA"   : "🏠",
-    "DW"    : "🚫",
-    "K"     : "💊",
-    "Off"   : "🏖️",
-    "None"  : "❓",
+    "S"      : "📋",
+    "Late"   : "🕐",
+    "1/2 UL" : "⛔",
+    "UL"     : "📋",
+    "AL"     : "🌴",
+    "1/2 AL" : "🌗",
+    "WFA"    : "🏠",
+    "1/2 WFA": "🏡",
+    "WFS"    : "📍",
+    "DW"     : "🚫",
+    "K"      : "💊",
+    "Off"    : "🏖️",
+    "None"   : "❓",
 }
 
 def _fmt_klasifikasi(klas_raw) -> str:
-    """
-    Format list Klasifikasi_raw menjadi string dengan ikon.
-    Contoh: ["Late"] → "🕐 Late"  |  ["None"] → "❓ None"
-    """
     if not klas_raw:
         return "❓ None"
     parts = []
@@ -224,6 +227,8 @@ def get_employee_daily(file_bytes, account):
     ul_col          = _find_ul_col(df_emp)
     dur_late_col    = _find_duration_late_col(df_emp)
     dur_early_col   = _find_duration_early_col(df_emp)
+    wfh_col         = _find_wfh_col(df_emp)
+    offsite_col     = _find_offsite_col(df_emp)
 
     def _parse_hours(val):
         if val is None:
@@ -252,9 +257,10 @@ def get_employee_daily(file_bytes, account):
             ul_count=r.get(ul_col)              if ul_col        else None,
             duration_late=r.get(dur_late_col)   if dur_late_col  else None,
             duration_early=r.get(dur_early_col) if dur_early_col else None,
+            wfh_count=r.get(wfh_col)            if wfh_col       else None,
+            offsite_hour=r.get(offsite_col)     if offsite_col   else None,
         )
 
-        # ── REVISI: baris None tetap ditampilkan, dilabeli ["None"] ──────────
         if _klas_raw is None:
             _klas_raw = ["None"]
 
@@ -274,8 +280,6 @@ def get_employee_daily(file_bytes, account):
     detail_df = pd.DataFrame(rows).sort_values("Tanggal").reset_index(drop=True)
     detail_df.insert(0, "No.", range(1, len(detail_df) + 1))
 
-    # summary berbasis Klasifikasi: "S" → Shift, "Off" → Off
-    # Baris ["None"] tidak masuk ke summary Shift maupun Off
     n_shift   = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "S")).sum())
     n_off     = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "Off")).sum())
     jam_shift = float(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "S"))]["Jam Kerja"].sum())
@@ -289,10 +293,6 @@ def get_employee_daily(file_bytes, account):
 
 @st.cache_data(show_spinner=False)
 def get_employee_daily_from_db(account, periode):
-    """
-    Baca data harian karyawan dari database SQLite.
-    status_klasifikasi disimpan dengan separator '|'.
-    """
     df_db = get_daily(account, periode)
     if df_db.empty:
         return pd.DataFrame(), pd.DataFrame()
@@ -307,7 +307,6 @@ def get_employee_daily_from_db(account, periode):
             _parts = [p.replace("\x00HALF\x00", "1/2").strip() for p in _tmp.split("/")]
             klas_raw = [p for p in _parts if p]
         else:
-            # ── REVISI: baris tanpa klasifikasi dari DB dilabeli ["None"] ──
             klas_raw = ["None"]
 
         klas_disp = _fmt_klasifikasi(klas_raw)
@@ -333,8 +332,6 @@ def get_employee_daily_from_db(account, periode):
     detail_df = pd.DataFrame(rows).sort_values("Tanggal").reset_index(drop=True)
     detail_df.insert(0, "No.", range(1, len(detail_df) + 1))
 
-    # summary berbasis Klasifikasi: "S" → Shift, "Off" → Off
-    # Baris ["None"] tidak masuk ke summary Shift maupun Off
     n_shift   = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "S")).sum())
     n_off     = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "Off")).sum())
     jam_shift = float(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "S"))]["Jam Kerja"].sum())
@@ -426,6 +423,8 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
     al_df     = detail_df[detail_df["Klasifikasi_raw"].apply(
         lambda x: has_status(x, "AL") or has_status(x, "1/2 AL"))].copy()
     wfa_df    = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "WFA"))].copy()
+    half_wfa_df = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "1/2 WFA"))].copy()
+    wfs_df    = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "WFS"))].copy()
     dw_df     = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "DW"))].copy()
     k_sick_df = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "K"))].copy()
 
@@ -434,6 +433,8 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
     n_ul     = len(ul_df)
     n_al     = len(al_df)
     n_wfa    = len(wfa_df)
+    n_hwfa   = len(half_wfa_df)
+    n_wfs    = len(wfs_df)
     n_dw     = len(dw_df)
     n_k_sick = len(k_sick_df)
 
@@ -540,24 +541,27 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                     column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
                 )
 
-    # Expander 3: Leave (AL / 1/2 AL / UL / WFA)
+    # Expander 3: Leave (AL / 1/2 AL / UL / WFA / 1/2 WFA / WFS)
     with st.expander(
-        f"🌴 Rincian Leave  —  📅 AL: {n_al}  |  🏠 WFA: {n_wfa}  |  📋 UL: {n_ul}",
+        f"🌴 Rincian Leave & WFx  —  📅 AL: {n_al}  |  🏠 WFA: {n_wfa}  |  🏡 1/2 WFA: {n_hwfa}  |  📍 WFS: {n_wfs}  |  📋 UL: {n_ul}",
         expanded=False,
     ):
-        if n_al == 0 and n_wfa == 0 and n_ul == 0:
-            st.info("ℹ️ Tidak ada data AL / 1/2 AL / UL / WFA pada periode ini.")
+        if n_al == 0 and n_wfa == 0 and n_hwfa == 0 and n_wfs == 0 and n_ul == 0:
+            st.info("ℹ️ Tidak ada data AL / 1/2 AL / UL / WFA / 1/2 WFA / WFS pada periode ini.")
         else:
-            lc1, lc2, lc3, lc4, lc5 = st.columns(5)
             n_full_al = len(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "AL"))])
             n_half_al = len(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "1/2 AL"))])
             n_half_ul = len(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "1/2 UL"))])
+
+            lc1, lc2, lc3, lc4, lc5, lc6, lc7 = st.columns(7)
             for (col, label, val, bg, bc, tc) in [
                 (lc1, "🌴 AL (Full)",         n_full_al, "#fdf4ff", "#a855f7", "#7e22ce"),
                 (lc2, "🌗 1/2 AL (Setengah)", n_half_al, "#fff1f2", "#fb7185", "#be123c"),
                 (lc3, "📋 UL (Full)",          n_ul,      "#f0fdfa", "#14b8a6", "#0f766e"),
                 (lc4, "📋 1/2 UL (Setengah)",  n_half_ul, "#fef2f2", "#ef4444", "#991b1b"),
-                (lc5, "🏠 WFA",               n_wfa,     "#f0f9ff", "#0ea5e9", "#0369a1"),
+                (lc5, "🏠 WFA (Full)",         n_wfa,     "#f0f9ff", "#0ea5e9", "#0369a1"),
+                (lc6, "🏡 1/2 WFA (Setengah)", n_hwfa,    "#eff6ff", "#60a5fa", "#1d4ed8"),
+                (lc7, "📍 WFS (Offsite)",      n_wfs,     "#eef2ff", "#6366f1", "#3730a3"),
             ]:
                 with col:
                     st.markdown(
@@ -569,7 +573,7 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                         unsafe_allow_html=True,
                     )
 
-            leave_combined = pd.concat([al_df, wfa_df, ul_df]).sort_values("Tanggal").reset_index(drop=True)
+            leave_combined = pd.concat([al_df, wfa_df, half_wfa_df, wfs_df, ul_df]).sort_values("Tanggal").reset_index(drop=True)
             leave_combined = leave_combined.drop_duplicates(subset=["Tanggal"]).reset_index(drop=True)
             leave_combined["No."] = range(1, len(leave_combined) + 1)
             st.dataframe(
@@ -580,7 +584,7 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                 column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
             )
 
-    # Expander 4: Detail Lengkap per Hari — seluruh tanggal termasuk "None"
+    # Expander 4: Detail Lengkap per Hari
     with st.expander(f"📑 Detail Lengkap per Hari  —  {len(detail_df)} hari tercatat", expanded=False):
         dd = detail_df.copy()
         dd["Jam Kerja"] = dd["Jam Kerja"].apply(lambda x: f"{x:.1f} jam" if x > 0 else "-")
@@ -621,6 +625,8 @@ def process_file(file_bytes):
     ul_col        = _find_ul_col(df)
     dur_late_col  = _find_duration_late_col(df)
     dur_early_col = _find_duration_early_col(df)
+    wfh_col       = _find_wfh_col(df)
+    offsite_col   = _find_offsite_col(df)
 
     df = df.copy()
     df = df[df["Account"].notna() & df["Rules"].notna()]
@@ -637,6 +643,8 @@ def process_file(file_bytes):
             ul_count=r.get(ul_col)              if ul_col        else None,
             duration_late=r.get(dur_late_col)   if dur_late_col  else None,
             duration_early=r.get(dur_early_col) if dur_early_col else None,
+            wfh_count=r.get(wfh_col)            if wfh_col       else None,
+            offsite_hour=r.get(offsite_col)     if offsite_col   else None,
         ),
         axis=1,
     )
@@ -659,12 +667,13 @@ def process_file(file_bytes):
     ).reset_index()
     pivot.columns.name = None
 
-    for col in ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL", "WFA", "DW", "K", "Off"]:
+    ALL_STATUS_COLS = ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL", "WFA", "1/2 WFA", "WFS", "DW", "K", "Off"]
+    for col in ALL_STATUS_COLS:
         if col not in pivot.columns:
             pivot[col] = 0
 
     pivot = all_employees.merge(pivot, on="Account", how="left").fillna(0)
-    for col in ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL", "WFA", "DW", "K", "Off"]:
+    for col in ALL_STATUS_COLS:
         pivot[col] = pivot[col].astype(int)
 
     name_map = df.groupby("Account")["Name"].first()
@@ -673,7 +682,8 @@ def process_file(file_bytes):
     pivot = pivot.sort_values(["Rules", "Nama"]).reset_index(drop=True)
     pivot.insert(0, "No.", range(1, len(pivot) + 1))
     result = pivot[["No.", "Nama", "Account", "Rules",
-                    "S", "Late", "1/2 UL", "UL", "AL", "1/2 AL", "WFA",
+                    "S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
+                    "WFA", "1/2 WFA", "WFS",
                     "DW", "K", "Off"]].copy()
 
     stats = {
@@ -705,6 +715,8 @@ def to_excel_bytes(df, time_range=""):
     PURPLE = PatternFill("solid", fgColor="FDF4FF")
     PINK   = PatternFill("solid", fgColor="FFF1F2")
     CYAN   = PatternFill("solid", fgColor="F0F9FF")
+    LTBLUE = PatternFill("solid", fgColor="EFF6FF")
+    INDIGO = PatternFill("solid", fgColor="EEF2FF")
     ORANGE = PatternFill("solid", fgColor="FFF7ED")
     ROSE   = PatternFill("solid", fgColor="FDF2F8")
     SLATE  = PatternFill("solid", fgColor="F8FAFC")
@@ -715,14 +727,15 @@ def to_excel_bytes(df, time_range=""):
     CENTER = Alignment(horizontal="center", vertical="center")
     LEFT   = Alignment(horizontal="left",   vertical="center")
 
-    ws.merge_cells("A1:N1")
+    # 16 kolom total: No., Nama, Account, Rules + 12 status
+    ws.merge_cells("A1:P1")
     ws["A1"] = "Summary Attendance"
     ws["A1"].font      = Font(name="Calibri", bold=True, color="FFFFFF", size=14)
     ws["A1"].fill      = DARK
     ws["A1"].alignment = CENTER
     ws.row_dimensions[1].height = 30
 
-    ws.merge_cells("A2:N2")
+    ws.merge_cells("A2:P2")
     ws["A2"] = f"Time Range: {time_range}" if time_range else "Rekap Absensi"
     ws["A2"].font      = Font(name="Calibri", color="FFFFFF", size=9, italic=True)
     ws["A2"].fill      = BLUE
@@ -730,7 +743,8 @@ def to_excel_bytes(df, time_range=""):
     ws.row_dimensions[2].height = 16
 
     headers = ["No.", "Nama", "Account", "Rules",
-               "S", "Late", "1/2 UL", "UL", "AL", "1/2 AL", "WFA",
+               "S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
+               "WFA", "1/2 WFA", "WFS",
                "DW", "K", "Off"]
     for ci, h in enumerate(headers, 1):
         c = ws.cell(row=3, column=ci, value=h)
@@ -740,6 +754,7 @@ def to_excel_bytes(df, time_range=""):
         c.border    = BORDER
     ws.row_dimensions[3].height = 20
 
+    # col index → (fill, text color)
     col_style = {
         5:  (GREEN,  "166534"),   # S
         6:  (YELLOW, "92400E"),   # Late
@@ -748,12 +763,15 @@ def to_excel_bytes(df, time_range=""):
         9:  (PURPLE, "7E22CE"),   # AL
         10: (PINK,   "BE123C"),   # 1/2 AL
         11: (CYAN,   "0369A1"),   # WFA
-        12: (ORANGE, "EA580C"),   # DW
-        13: (ROSE,   "DB2777"),   # K
-        14: (SLATE,  "475569"),   # Off
+        12: (LTBLUE, "1D4ED8"),   # 1/2 WFA
+        13: (INDIGO, "3730A3"),   # WFS
+        14: (ORANGE, "EA580C"),   # DW
+        15: (ROSE,   "DB2777"),   # K
+        16: (SLATE,  "475569"),   # Off
     }
 
-    ALL_STATUS_COLS = ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL", "WFA", "DW", "K", "Off"]
+    ALL_STATUS_COLS = ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
+                       "WFA", "1/2 WFA", "WFS", "DW", "K", "Off"]
 
     for ri, (_, row) in enumerate(df.iterrows()):
         er = ri + 4
@@ -783,7 +801,7 @@ def to_excel_bytes(df, time_range=""):
     ws[f"A{tr}"].fill      = DARK
     ws[f"A{tr}"].alignment = CENTER
     ws[f"A{tr}"].border    = BORDER
-    for ci in range(5, 15):
+    for ci in range(5, 17):
         c       = ws.cell(row=tr, column=ci)
         c.value = f"=SUM({get_column_letter(ci)}4:{get_column_letter(ci)}{tr-1})"
         c.font  = Font(name="Calibri", bold=True, color="FFFFFF", size=10)
@@ -791,11 +809,11 @@ def to_excel_bytes(df, time_range=""):
         c.alignment = CENTER
         c.border    = BORDER
 
-    for ci, w in enumerate([6, 32, 24, 28, 10, 10, 8, 8, 8, 8, 8, 8, 8, 8], 1):
+    for ci, w in enumerate([6, 32, 24, 28, 10, 10, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8], 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
 
     ws.freeze_panes    = "A4"
-    ws.auto_filter.ref = f"A3:N{tr-1}"
+    ws.auto_filter.ref = f"A3:P{tr-1}"
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -809,31 +827,35 @@ def to_excel_bytes(df, time_range=""):
 CORE_COLS = ["No.", "Nama", "Account", "Rules", "S", "Late", "1/2 UL", "UL", "DW"]
 
 OPTIONAL_COLS_DEF = [
-    ("K",     "💊 K (Sakit)",  "Sakit dgn Surat"),
-    ("AL",    "🌴 AL",         "Annual Leave penuh"),
-    ("1/2 AL","🌗 1/2 AL",     "Annual Leave setengah hari"),
-    ("WFA",   "🏠 WFA",        "Work From Anywhere"),
-    ("Off",   "🏖️ Off",        "Rest / Not scheduled"),
+    ("K",      "💊 K (Sakit)",   "Sakit dgn Surat"),
+    ("AL",     "🌴 AL",          "Annual Leave penuh"),
+    ("1/2 AL", "🌗 1/2 AL",      "Annual Leave setengah hari"),
+    ("WFA",    "🏠 WFA",         "Work From Home penuh"),
+    ("1/2 WFA","🏡 1/2 WFA",     "Work From Home setengah hari"),
+    ("WFS",    "📍 WFS",         "Work From Offsite"),
+    ("Off",    "🏖️ Off",         "Rest / Not scheduled"),
 ]
 OPTIONAL_KEYS   = [c[0] for c in OPTIONAL_COLS_DEF]
 OPTIONAL_LABELS = {c[0]: c[1] for c in OPTIONAL_COLS_DEF}
 OPTIONAL_DESCS  = {c[0]: c[2] for c in OPTIONAL_COLS_DEF}
 
 COL_CONFIG_ALL = {
-    "No."    : st.column_config.NumberColumn("No.", width="small"),
-    "Nama"   : st.column_config.TextColumn("Nama", width="large"),
-    "Account": st.column_config.TextColumn("Account", width="medium"),
-    "Rules"  : st.column_config.TextColumn("Rules", width="medium"),
-    "S"      : st.column_config.NumberColumn("📋 S (Shift)", format="%d", width="small"),
-    "Late"   : st.column_config.NumberColumn("🕐 Late",      format="%d", width="small"),
-    "1/2 UL" : st.column_config.NumberColumn("⛔ 1/2 UL",   format="%d", width="small"),
-    "UL"     : st.column_config.NumberColumn("📋 UL",        format="%d", width="small"),
-    "DW"     : st.column_config.NumberColumn("🚫 DW",        format="%d", width="small"),
-    "K"      : st.column_config.NumberColumn("💊 K",         format="%d", width="small"),
-    "AL"     : st.column_config.NumberColumn("🌴 AL",        format="%d", width="small"),
-    "1/2 AL" : st.column_config.NumberColumn("🌗 1/2 AL",    format="%d", width="small"),
-    "WFA"    : st.column_config.NumberColumn("🏠 WFA",       format="%d", width="small"),
-    "Off"    : st.column_config.NumberColumn("🏖️ Off",       format="%d", width="small"),
+    "No."     : st.column_config.NumberColumn("No.", width="small"),
+    "Nama"    : st.column_config.TextColumn("Nama", width="large"),
+    "Account" : st.column_config.TextColumn("Account", width="medium"),
+    "Rules"   : st.column_config.TextColumn("Rules", width="medium"),
+    "S"       : st.column_config.NumberColumn("📋 S (Shift)",  format="%d", width="small"),
+    "Late"    : st.column_config.NumberColumn("🕐 Late",       format="%d", width="small"),
+    "1/2 UL"  : st.column_config.NumberColumn("⛔ 1/2 UL",    format="%d", width="small"),
+    "UL"      : st.column_config.NumberColumn("📋 UL",         format="%d", width="small"),
+    "DW"      : st.column_config.NumberColumn("🚫 DW",         format="%d", width="small"),
+    "K"       : st.column_config.NumberColumn("💊 K",          format="%d", width="small"),
+    "AL"      : st.column_config.NumberColumn("🌴 AL",         format="%d", width="small"),
+    "1/2 AL"  : st.column_config.NumberColumn("🌗 1/2 AL",     format="%d", width="small"),
+    "WFA"     : st.column_config.NumberColumn("🏠 WFA",        format="%d", width="small"),
+    "1/2 WFA" : st.column_config.NumberColumn("🏡 1/2 WFA",    format="%d", width="small"),
+    "WFS"     : st.column_config.NumberColumn("📍 WFS",        format="%d", width="small"),
+    "Off"     : st.column_config.NumberColumn("🏖️ Off",        format="%d", width="small"),
 }
 
 
@@ -880,136 +902,166 @@ _LOGIC_HTML = (
     '<td style="padding:0.4rem 0.7rem;font-weight:600;">Nilai Pemicu</td>'
     '</tr>'
     '<tr>'
+    '<td style="padding:0.4rem 0.7rem;">📍 WFS</td>'
+    '<td style="padding:0.4rem 0.7rem;"><code>Attendance results</code> + <code>Offsite(Hour)</code></td>'
+    '<td style="padding:0.4rem 0.7rem;">att = <b>"Normal (Offsite)"</b> DAN Offsite(Hour) &ne; "--"/kosong</td>'
+    '</tr>'
+    '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;">🏠 WFA</td>'
+    '<td style="padding:0.4rem 0.7rem;"><code>WFH-WorkFromHome-家办公(Day(s))</code></td>'
+    '<td style="padding:0.4rem 0.7rem;">nilai = <b>1</b></td>'
+    '</tr>'
+    '<tr>'
+    '<td style="padding:0.4rem 0.7rem;">🏡 1/2 WFA</td>'
+    '<td style="padding:0.4rem 0.7rem;"><code>WFH-WorkFromHome-家办公(Day(s))</code></td>'
+    '<td style="padding:0.4rem 0.7rem;">nilai = <b>0.5</b></td>'
+    '</tr>'
+    '<tr style="background:#f1f5f9;">'
     '<td style="padding:0.4rem 0.7rem;">🌴 AL</td>'
     '<td style="padding:0.4rem 0.7rem;"><code>AnnualLeave - 印尼员工年假(Day(s))</code></td>'
     '<td style="padding:0.4rem 0.7rem;">nilai = <b>1</b></td>'
     '</tr>'
-    '<tr style="background:#f1f5f9;">'
+    '<tr>'
     '<td style="padding:0.4rem 0.7rem;">🌗 1/2 AL</td>'
     '<td style="padding:0.4rem 0.7rem;"><code>AnnualLeave - 印尼员工年假(Day(s))</code></td>'
     '<td style="padding:0.4rem 0.7rem;">nilai = <b>0.5</b></td>'
     '</tr>'
-    '<tr>'
+    '<tr style="background:#f1f5f9;">'
     '<td style="padding:0.4rem 0.7rem;">📋 UL</td>'
     '<td style="padding:0.4rem 0.7rem;"><code>UL-Unpaid Leave-事假(Day(s))</code></td>'
     '<td style="padding:0.4rem 0.7rem;">nilai = <b>1</b></td>'
     '</tr>'
-    '<tr style="background:#f1f5f9;">'
+    '<tr>'
     '<td style="padding:0.4rem 0.7rem;">📋 1/2 UL (dari kolom)</td>'
     '<td style="padding:0.4rem 0.7rem;"><code>UL-Unpaid Leave-事假(Day(s))</code></td>'
     '<td style="padding:0.4rem 0.7rem;">nilai = <b>0.5</b></td>'
     '</tr>'
-    '<tr>'
+    '<tr style="background:#f1f5f9;">'
     '<td style="padding:0.4rem 0.7rem;">🕐 Late (masuk)</td>'
     '<td style="padding:0.4rem 0.7rem;"><code>Duration of late arrival(分钟)</code></td>'
     '<td style="padding:0.4rem 0.7rem;">1 – 120 menit</td>'
     '</tr>'
-    '<tr style="background:#f1f5f9;">'
+    '<tr>'
     '<td style="padding:0.4rem 0.7rem;">⛔ 1/2 UL (masuk)</td>'
     '<td style="padding:0.4rem 0.7rem;"><code>Duration of late arrival(分钟)</code></td>'
     '<td style="padding:0.4rem 0.7rem;">&gt; 120 menit</td>'
     '</tr>'
-    '<tr>'
+    '<tr style="background:#f1f5f9;">'
     '<td style="padding:0.4rem 0.7rem;">🕐 Late (pulang)</td>'
     '<td style="padding:0.4rem 0.7rem;"><code>Duration of early departure(分钟)</code></td>'
     '<td style="padding:0.4rem 0.7rem;">1 – 120 menit</td>'
     '</tr>'
-    '<tr style="background:#f1f5f9;">'
+    '<tr>'
     '<td style="padding:0.4rem 0.7rem;">⛔ 1/2 UL (pulang)</td>'
     '<td style="padding:0.4rem 0.7rem;"><code>Duration of early departure(分钟)</code></td>'
     '<td style="padding:0.4rem 0.7rem;">&gt; 120 menit</td>'
     '</tr>'
-    '<tr>'
+    '<tr style="background:#f1f5f9;">'
     '<td style="padding:0.4rem 0.7rem;">💊 K</td>'
     '<td style="padding:0.4rem 0.7rem;"><code>K-Sick W Letter-病假有信(Day(s))</code></td>'
     '<td style="padding:0.4rem 0.7rem;">&ne; 0 / "--"</td>'
     '</tr>'
-    '<tr style="background:#f1f5f9;">'
+    '<tr>'
     '<td style="padding:0.4rem 0.7rem;">🚫 DW</td>'
     '<td style="padding:0.4rem 0.7rem;"><code>Number of absences(Count)</code></td>'
     '<td style="padding:0.4rem 0.7rem;">&ne; 0 / "--"</td>'
     '</tr>'
     '</table>'
 
-    # --- Judul Tabel Status ---
+    # --- Status & Kondisi Pemicu ---
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
     'text-transform:uppercase;letter-spacing:0.06em;">📊 Status &amp; Kondisi Pemicu</div>'
 
     '<table style="width:100%;border-collapse:collapse;margin-bottom:1.2rem;">'
 
     '<tr style="background:#f1f5f9;">'
-    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;width:110px;">📋 S (Shift)</td>'
-    '<td style="padding:0.4rem 0.7rem;">Att Results bernilai <b>TEPAT</b> <code>"Normal"</code> '
-    'atau <code>"Normal（Correction of missed punch）"</code> — tidak ada keterlambatan/pulang cepat.</td>'
-    '</tr>'
-
-    '<tr>'
-    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🕐 Late</td>'
-    '<td style="padding:0.4rem 0.7rem;">'
-    'Kolom <code>Duration of late arrival</code> <b>atau</b> <code>Duration of early departure</code> '
-    'bernilai <b>1–120 menit</b>. Berbasis kolom pra-hitung sistem absensi.</td>'
-    '</tr>'
-
-    '<tr style="background:#f1f5f9;">'
-    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">⛔ 1/2 UL</td>'
-    '<td style="padding:0.4rem 0.7rem;">'
-    'Salah satu dari tiga sumber:<br>'
-    '&bull; Kolom <code>UL-Unpaid Leave</code> = <b>0.5</b><br>'
-    '&bull; Kolom <code>Duration of late arrival</code> &gt; <b>120 menit</b><br>'
-    '&bull; Kolom <code>Duration of early departure</code> &gt; <b>120 menit</b></td>'
-    '</tr>'
-
-    '<tr>'
-    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">📋 UL</td>'
-    '<td style="padding:0.4rem 0.7rem;">Kolom <code>UL-Unpaid Leave-事假(Day(s))</code> = <b>1</b> — '
-    'cuti tidak dibayar satu hari penuh.</td>'
-    '</tr>'
-
-    '<tr style="background:#f1f5f9;">'
-    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🚫 DW</td>'
-    '<td style="padding:0.4rem 0.7rem;">Kolom <code>"Number of absences(Count)"</code> '
-    'bernilai <b>bukan</b> <code>"0"</code> atau <code>"--"</code> — karyawan tidak hadir.</td>'
-    '</tr>'
-
-    '<tr>'
-    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">💊 K</td>'
-    '<td style="padding:0.4rem 0.7rem;">Kolom <code>"K-Sick W Letter"</code> '
-    'bernilai <b>bukan</b> <code>"0"</code> atau <code>"--"</code> — sakit dengan surat.<br>'
-    'Dicek <em>sebelum</em> DW agar sakit-dengan-surat tidak tertimpa DW.</td>'
-    '</tr>'
-
-    '<tr style="background:#f1f5f9;">'
-    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🏖️ Off</td>'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;width:110px;">🏖️ Off</td>'
     '<td style="padding:0.4rem 0.7rem;">Att Results bernilai tepat '
     '<code>"Normal (rest)"</code> atau <code>"Normal (not scheduled)"</code> '
     '— dicek <b>paling awal</b>.</td>'
     '</tr>'
 
     '<tr>'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">📍 WFS</td>'
+    '<td style="padding:0.4rem 0.7rem;">'
+    'Att Results = <b>tepat</b> <code>"Normal (Offsite)"</code> <b>DAN</b> '
+    'kolom <code>Offsite(Hour)</code> berisi nilai apapun selain <code>"--"</code> / kosong. '
+    'Dicek <b>sebelum</b> skip-shift agar tidak terlewat meski shift kosong.</td>'
+    '</tr>'
+
+    '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">💊 K</td>'
+    '<td style="padding:0.4rem 0.7rem;">Kolom <code>"K-Sick W Letter"</code> '
+    'bernilai <b>bukan</b> <code>"0"</code> atau <code>"--"</code> — sakit dengan surat.<br>'
+    'Dicek <em>sebelum</em> DW agar sakit-dengan-surat tidak tertimpa DW.</td>'
+    '</tr>'
+
+    '<tr>'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🚫 DW</td>'
+    '<td style="padding:0.4rem 0.7rem;">Kolom <code>"Number of absences(Count)"</code> '
+    'bernilai <b>bukan</b> <code>"0"</code> atau <code>"--"</code> — karyawan tidak hadir.</td>'
+    '</tr>'
+
+    '<tr style="background:#f1f5f9;">'
     '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🌴 AL</td>'
     '<td style="padding:0.4rem 0.7rem;">Kolom <code>AnnualLeave - 印尼员工年假(Day(s))</code> = <b>1</b> '
     '→ <code>["AL"]</code></td>'
     '</tr>'
 
-    '<tr style="background:#f1f5f9;">'
+    '<tr>'
     '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🌗 1/2 AL</td>'
     '<td style="padding:0.4rem 0.7rem;">Kolom <code>AnnualLeave - 印尼员工年假(Day(s))</code> = <b>0.5</b> '
     '→ <code>["1/2 AL"]</code></td>'
     '</tr>'
 
+    '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">📋 UL</td>'
+    '<td style="padding:0.4rem 0.7rem;">Kolom <code>UL-Unpaid Leave-事假(Day(s))</code> = <b>1</b> — '
+    'cuti tidak dibayar satu hari penuh.</td>'
+    '</tr>'
+
     '<tr>'
-    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🏠 WFA</td>'
-    '<td style="padding:0.4rem 0.7rem;">Att mengandung <code>"normal"</code> + <code>"leave"</code> '
-    '+ Leave mengandung <code>"WorkFromHome"</code> / <code>"WFH"</code> '
-    '→ <code>["WFA"]</code></td>'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">⛔ 1/2 UL (dari UL)</td>'
+    '<td style="padding:0.4rem 0.7rem;">Kolom <code>UL-Unpaid Leave-事假(Day(s))</code> = <b>0.5</b> — '
+    'Unpaid Leave setengah hari.</td>'
     '</tr>'
 
     '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🏠 WFA</td>'
+    '<td style="padding:0.4rem 0.7rem;">Kolom <code>WFH-WorkFromHome-家办公(Day(s))</code> = <b>1</b> '
+    '→ Work From Home penuh.</td>'
+    '</tr>'
+
+    '<tr>'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🏡 1/2 WFA</td>'
+    '<td style="padding:0.4rem 0.7rem;">Kolom <code>WFH-WorkFromHome-家办公(Day(s))</code> = <b>0.5</b> '
+    '→ Work From Home setengah hari.</td>'
+    '</tr>'
+
+    '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🕐 Late</td>'
+    '<td style="padding:0.4rem 0.7rem;">'
+    'Kolom <code>Duration of late arrival</code> <b>atau</b> <code>Duration of early departure</code> '
+    'bernilai <b>1–120 menit</b>.</td>'
+    '</tr>'
+
+    '<tr>'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">⛔ 1/2 UL (durasi)</td>'
+    '<td style="padding:0.4rem 0.7rem;">'
+    'Kolom <code>Duration of late arrival</code> <b>atau</b> <code>Duration of early departure</code> '
+    '&gt; <b>120 menit</b>.</td>'
+    '</tr>'
+
+    '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">📋 S (Shift)</td>'
+    '<td style="padding:0.4rem 0.7rem;">Att Results bernilai <b>TEPAT</b> <code>"Normal"</code> '
+    'atau <code>"Normal（Correction of missed punch）"</code>.</td>'
+    '</tr>'
+
+    '<tr>'
     '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">❓ None</td>'
-    '<td style="padding:0.4rem 0.7rem;">Baris yang tidak memenuhi satu pun kondisi di atas — '
-    'misalnya shift dilewati (Rest / kosong / "--") <b>dan</b> att_result tidak dikenali. '
-    'Tetap ditampilkan di tabel Detail Lengkap per Hari dengan label <b>"❓ None"</b> '
-    'agar tidak ada tanggal yang hilang dari tampilan.</td>'
+    '<td style="padding:0.4rem 0.7rem;">Tidak memenuhi satu pun kondisi di atas — ditampilkan di '
+    'Detail Lengkap per Hari dengan label <b>"❓ None"</b>.</td>'
     '</tr>'
 
     '</table>'
@@ -1022,54 +1074,54 @@ _LOGIC_HTML = (
     'padding:0.8rem 1rem;font-family:monospace;font-size:0.78rem;line-height:2.1;'
     'margin-bottom:1.2rem;color:#475569;">'
     '1.  🏖️ Att = "Normal (rest)" / "Normal (not scheduled)" &rarr; <b>Off</b> &mdash; selesai<br>'
-    '2.  ⏭️ Shift = Rest / Not scheduled / kosong / "--" &rarr; <b>dilewati engine</b>, tampil sebagai <b>❓ None</b><br>'
-    '3.  💊 Kolom K-Sick W Letter &ne; "0" dan "--" &rarr; <b>K</b> &mdash; selesai<br>'
-    '4.  🚫 Kolom Number of absences(Count) &ne; "0" dan "--" &rarr; <b>DW</b> &mdash; selesai<br>'
-    '5.  🌴 Kolom AnnualLeave = 0.5 &rarr; <b>1/2 AL</b> &mdash; selesai<br>'
+    '2.  📍 Att = "Normal (Offsite)" DAN Offsite(Hour) &ne; "--"/kosong &rarr; <b>WFS</b> &mdash; selesai<br>'
+    '3.  ⏭️ Shift = Rest / Not scheduled / kosong / "--" &rarr; <b>dilewati engine</b>, tampil sebagai <b>❓ None</b><br>'
+    '4.  💊 Kolom K-Sick W Letter &ne; "0" dan "--" &rarr; <b>K</b> &mdash; selesai<br>'
+    '5.  🚫 Kolom Number of absences(Count) &ne; "0" dan "--" &rarr; <b>DW</b> &mdash; selesai<br>'
+    '6.  🌴 Kolom AnnualLeave = 0.5 &rarr; <b>1/2 AL</b> &mdash; selesai<br>'
     '&nbsp;&nbsp;&nbsp;Kolom AnnualLeave = 1   &rarr; <b>AL</b> &mdash; selesai<br>'
-    '6.  📋 Kolom UL-Unpaid Leave = 1   &rarr; <b>UL</b> &mdash; selesai<br>'
+    '7.  📋 Kolom UL-Unpaid Leave = 1   &rarr; <b>UL</b> &mdash; selesai<br>'
     '&nbsp;&nbsp;&nbsp;Kolom UL-Unpaid Leave = 0.5 &rarr; <b>1/2 UL</b> &mdash; selesai<br>'
-    '7.  🏠 Att mengandung "normal"+"leave" + Leave = WFH &rarr; <b>WFA</b> &mdash; selesai<br>'
-    '8.  🕐 Kolom Duration of late arrival:<br>'
+    '8.  🏠 Kolom WFH-WorkFromHome = 1   &rarr; <b>WFA</b> &mdash; selesai<br>'
+    '&nbsp;&nbsp;&nbsp;Kolom WFH-WorkFromHome = 0.5 &rarr; <b>1/2 WFA</b> &mdash; selesai<br>'
+    '9.  🕐 Kolom Duration of late arrival:<br>'
     '&nbsp;&nbsp;&nbsp;+-- 1-120 mnt &rarr; <b>Late</b> &mdash; selesai<br>'
     '&nbsp;&nbsp;&nbsp;+-- &gt;120 mnt &rarr; <b>1/2 UL</b> &mdash; selesai<br>'
-    '9.  🕐 Kolom Duration of early departure:<br>'
+    '10. 🕐 Kolom Duration of early departure:<br>'
     '&nbsp;&nbsp;&nbsp;+-- 1-120 mnt &rarr; <b>Late</b> &mdash; selesai<br>'
     '&nbsp;&nbsp;&nbsp;+-- &gt;120 mnt &rarr; <b>1/2 UL</b> &mdash; selesai<br>'
-    '10. 📋 Att TEPAT "Normal" atau "Normal（Correction of missed punch）" &rarr; <b>S</b><br>'
-    '11. ❓ Selain itu &rarr; <b>None</b> (tetap tampil di Detail Lengkap per Hari)'
+    '11. 📋 Att TEPAT "Normal" atau "Normal（Correction of missed punch）" &rarr; <b>S</b><br>'
+    '12. ❓ Selain itu &rarr; <b>None</b> (tetap tampil di Detail Lengkap per Hari)'
     '</div>'
 
     # --- Perubahan dari Versi Sebelumnya ---
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
-    'text-transform:uppercase;letter-spacing:0.06em;">🔄 Perubahan Logika Utama</div>'
+    'text-transform:uppercase;letter-spacing:0.06em;">🔄 Perubahan Logika Utama (Update Terbaru)</div>'
 
     '<div style="background:#fef9ec;border-radius:8px;padding:0.7rem 1rem;margin-bottom:1.2rem;'
     'font-size:0.82rem;border-left:3px solid #eab308;">'
-    '<b>1. AL / 1/2 AL berbasis kolom (bukan punch presence):</b><br>'
-    '- 🌴 Kolom <code>AnnualLeave - 印尼员工年假(Day(s))</code> = <b>1</b> &rarr; AL<br>'
-    '- 🌗 Kolom <code>AnnualLeave - 印尼员工年假(Day(s))</code> = <b>0.5</b> &rarr; 1/2 AL<br>'
-    '- Tidak lagi menggunakan att_result "normal"+"leave"+"AnnualLeave" + cek punch<br><br>'
-    '<b>2. Status baru UL — Unpaid Leave (cuti tidak dibayar):</b><br>'
-    '- 📋 Kolom <code>UL-Unpaid Leave-事假(Day(s))</code> = <b>1</b> &rarr; UL (penuh)<br>'
-    '- 📋 Kolom <code>UL-Unpaid Leave-事假(Day(s))</code> = <b>0.5</b> &rarr; 1/2 UL<br><br>'
-    '<b>3. Late / 1/2 UL berbasis kolom durasi (bukan hitung punch vs shift):</b><br>'
-    '- 🕐 Kolom <code>Duration of late arrival(分钟)</code> 1-120 mnt &rarr; Late<br>'
-    '- ⛔ Kolom <code>Duration of late arrival(分钟)</code> &gt;120 mnt &rarr; 1/2 UL<br>'
-    '- 🕐 Kolom <code>Duration of early departure(分钟)</code> 1-120 mnt &rarr; Late<br>'
-    '- ⛔ Kolom <code>Duration of early departure(分钟)</code> &gt;120 mnt &rarr; 1/2 UL<br><br>'
-    '<b>4. DW dan K tetap berbasis kolom count (tidak berubah).</b><br>'
-    '<b>5. WFA tetap berbasis att_result + Leave & Overtime Application (tidak berubah).</b><br><br>'
-    '<b>6. Tampilan Rincian Harian (UI):</b><br>'
-    '- Metric cards di Rincian Harian Karyawan disederhanakan menjadi <b>2 kartu</b>: ☀️ Shift dan 🏖️ Off<br>'
-    '- Kolom "Klasifikasi" menampilkan ikon visual untuk setiap status (misal: 🕐 Late, ⛔ 1/2 UL)<br><br>'
-    '<b>7. ❓ Baris "None" kini selalu ditampilkan di Detail Lengkap per Hari:</b><br>'
-    '- Sebelumnya baris yang tidak terklasifikasi (shift Rest/kosong/tidak dikenal) di-skip dan tidak muncul<br>'
-    '- Sekarang seluruh tanggal yang ada di file Excel selalu tampil<br>'
-    '- Baris tanpa klasifikasi dilabeli <b>"❓ None"</b> sehingga mudah diidentifikasi untuk investigasi lebih lanjut'
+
+    '<b>1. ✨ Klasifikasi Baru — WFS (Work From Offsite):</b><br>'
+    '- 📍 Dipicu oleh: <code>Attendance results</code> = <b>tepat "Normal (Offsite)"</b> '
+    'DAN kolom <code>Offsite(Hour)</code> terisi (bukan "--" atau kosong)<br>'
+    '- Dicek <b>sebelum</b> skip-shift (langkah 2) agar tidak terlewat meski shift tidak standar<br>'
+    '- Memiliki kolom tersendiri di tabel summary dan ekspor Excel<br><br>'
+
+    '<b>2. 🔄 WFA sepenuhnya berbasis kolom (hapus logic lama att_result + leave string):</b><br>'
+    '- <b>Dihapus:</b> logika lama <em>att mengandung "normal"+"leave" + leave mengandung "WFH/WorkFromHome"</em><br>'
+    '- <b>Baru:</b> kolom <code>WFH-WorkFromHome-家办公(Day(s))</code> = <b>1</b> &rarr; <b>WFA</b><br><br>'
+
+    '<b>3. ✨ Klasifikasi Baru — 1/2 WFA (Work From Home setengah hari):</b><br>'
+    '- 🏡 Kolom <code>WFH-WorkFromHome-家办公(Day(s))</code> = <b>0.5</b> &rarr; <b>1/2 WFA</b><br>'
+    '- Ditampilkan di metric card, tabel summary, dan ekspor Excel<br><br>'
+
+    '<b>4. AL / 1/2 AL tetap berbasis kolom AnnualLeave (tidak berubah).</b><br>'
+    '<b>5. UL / 1/2 UL tetap berbasis kolom UL-Unpaid Leave (tidak berubah).</b><br>'
+    '<b>6. DW dan K tetap berbasis kolom count (tidak berubah).</b><br>'
+    '<b>7. Late / 1/2 UL tetap berbasis kolom Duration (tidak berubah).</b>'
     '</div>'
 
-    # --- Aturan Semua Status Standalone ---
+    # --- Semua Status Standalone ---
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
     'text-transform:uppercase;letter-spacing:0.06em;">🔒 Semua Status Bersifat Standalone</div>'
 
@@ -1082,7 +1134,9 @@ _LOGIC_HTML = (
     '- 📋 <b>UL</b>: Unpaid Leave penuh (kolom UL = 1)<br>'
     '- 🌴 <b>AL</b>: Annual Leave penuh (kolom AL = 1)<br>'
     '- 🌗 <b>1/2 AL</b>: Annual Leave setengah hari (kolom AL = 0.5)<br>'
-    '- 🏠 <b>WFA</b>: Work From Home<br>'
+    '- 🏠 <b>WFA</b>: Work From Home penuh (kolom WFH = 1)<br>'
+    '- 🏡 <b>1/2 WFA</b>: Work From Home setengah hari (kolom WFH = 0.5)<br>'
+    '- 📍 <b>WFS</b>: Work From Offsite (att = "Normal (Offsite)" + Offsite(Hour) terisi)<br>'
     '- 💊 <b>K</b>: sakit dengan surat<br>'
     '- 🚫 <b>DW</b>: tidak hadir<br>'
     '- 🏖️ <b>Off</b>: hari libur / tidak terjadwal<br>'
@@ -1095,13 +1149,15 @@ _LOGIC_HTML = (
 
     '<div style="background:#fef9ec;border-radius:8px;padding:0.6rem 1rem;'
     'font-size:0.82rem;border-left:3px solid #f59e0b;">'
+    '- 📍 WFS dicek <em>sebelum</em> skip-shift — jika att = "Normal (Offsite)", baris tetap diproses meski shift kosong<br>'
     '- ⏭️ Shift <code>Rest</code> / <code>Not scheduled</code> / <code>--</code> / kosong '
-    '&rarr; dilewati engine klasifikasi. Jika att bukan "Normal (rest)" maka akan tampil sebagai <b>❓ None</b><br>'
+    '&rarr; dilewati engine klasifikasi. Jika att bukan "Normal (rest)" / "Normal (Offsite)" maka tampil sebagai <b>❓ None</b><br>'
     '- ❓ Baris <b>None</b> <em>tidak</em> masuk perhitungan metric Shift, Off, maupun expander manapun — hanya tampil di Detail Lengkap per Hari<br>'
     '- 🔍 K diperiksa <em>sebelum</em> DW agar sakit-dengan-surat tidak tertimpa absensi<br>'
-    '- 🛡️ Karyawan dengan K / DW / AL / UL / WFA <b>tidak dikenai</b> cek keterlambatan<br>'
-    '- 📊 Kolom AL &amp; UL menggunakan <code>0.5</code> untuk setengah hari; mendukung koma desimal ("0,5")<br>'
-    '- 🗄️ DB menggunakan separator <code>|</code> (pipe) untuk menghindari konflik dengan "1/2"'
+    '- 🛡️ Karyawan dengan K / DW / AL / UL / WFA / 1/2 WFA / WFS <b>tidak dikenai</b> cek keterlambatan<br>'
+    '- 📊 Kolom AL, UL, WFH menggunakan <code>0.5</code> untuk setengah hari; mendukung koma desimal ("0,5")<br>'
+    '- 🗄️ DB menggunakan separator <code>|</code> (pipe) untuk menghindari konflik dengan "1/2"<br>'
+    '- 🏢 Offsite(Hour) hanya perlu berisi nilai apapun &ne; "--"/kosong (bisa angka desimal jam)'
     '</div>'
 
     '</div>'
@@ -1121,7 +1177,7 @@ st.markdown(
     '<div class="app-header">'
     '<div class="badge">📊 HR TOOLS</div>'
     '<h1>🗓️ Absensi Rekap Generator</h1>'
-    '<p>📂 Upload file Excel absensi &rarr; 🔍 Hitung S / Late / UL / AL / WFA / DW per karyawan &rarr; 📥 Download hasil</p>'
+    '<p>📂 Upload file Excel absensi &rarr; 🔍 Hitung S / Late / UL / AL / WFA / WFS / DW per karyawan &rarr; 📥 Download hasil</p>'
     '</div>',
     unsafe_allow_html=True,
 )
@@ -1197,6 +1253,8 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             _ul_col        = _find_ul_col(df_raw)
             _dur_late_col  = _find_duration_late_col(df_raw)
             _dur_early_col = _find_duration_early_col(df_raw)
+            _wfh_col       = _find_wfh_col(df_raw)
+            _offsite_col   = _find_offsite_col(df_raw)
 
             df_raw["_tipe_shift"] = df_raw["Shift"].apply(classify_shift_type)
             df_raw["_status_klasifikasi"] = df_raw.apply(
@@ -1210,6 +1268,8 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                     ul_count=r.get(_ul_col)                if _ul_col        else None,
                     duration_late=r.get(_dur_late_col)     if _dur_late_col  else None,
                     duration_early=r.get(_dur_early_col)   if _dur_early_col else None,
+                    wfh_count=r.get(_wfh_col)              if _wfh_col       else None,
+                    offsite_hour=r.get(_offsite_col)       if _offsite_col   else None,
                 ), axis=1,
             )
             save_periode(df_raw, _periode)
@@ -1228,10 +1288,14 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             "normal": "S",
             "late": "Late", "half_ul": "1/2 UL",
             "ul_count": "UL",
-            "half_al": "1/2 AL", "al": "AL", "wfa": "WFA",
+            "half_al": "1/2 AL", "al": "AL",
+            "wfa": "WFA",
+            "half_wfa": "1/2 WFA",
+            "wfs": "WFS",
             "dw": "DW", "k_sick": "K", "off_count": "Off",
         })
-        for col in ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL", "WFA", "DW", "K", "Off"]:
+        for col in ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
+                    "WFA", "1/2 WFA", "WFS", "DW", "K", "Off"]:
             if col not in df_result.columns:
                 df_result[col] = 0
         file_bytes = None
@@ -1245,17 +1309,19 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
         df_result.insert(0, "No.", range(1, len(df_result) + 1))
 
     # ── Metric Cards ──
-    total_s   = int(df_result["S"].sum())
-    total_l   = int(df_result["Late"].sum())
-    total_k   = int(df_result["1/2 UL"].sum())
-    total_ul  = int(df_result["UL"].sum())
-    total_al  = int(df_result["AL"].sum())
-    total_hal = int(df_result["1/2 AL"].sum())
-    total_wfa = int(df_result["WFA"].sum())
-    total_dw  = int(df_result["DW"].sum())
-    total_ks  = int(df_result["K"].sum())
-    total_off = int(df_result["Off"].sum())
-    total_e   = stats["employees"]
+    total_s    = int(df_result["S"].sum())
+    total_l    = int(df_result["Late"].sum())
+    total_k    = int(df_result["1/2 UL"].sum())
+    total_ul   = int(df_result["UL"].sum())
+    total_al   = int(df_result["AL"].sum())
+    total_hal  = int(df_result["1/2 AL"].sum())
+    total_wfa  = int(df_result["WFA"].sum())
+    total_hwfa = int(df_result["1/2 WFA"].sum())
+    total_wfs  = int(df_result["WFS"].sum())
+    total_dw   = int(df_result["DW"].sum())
+    total_ks   = int(df_result["K"].sum())
+    total_off  = int(df_result["Off"].sum())
+    total_e    = stats["employees"]
 
     st.markdown(f"""
 <div class="metric-row" style="grid-template-columns: repeat(6, 1fr);">
@@ -1290,7 +1356,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     <div class="sub">Total dalam periode</div>
   </div>
 </div>
-<div class="metric-row" style="margin-top:-1rem;">
+<div class="metric-row" style="margin-top:-1rem;grid-template-columns: repeat(7, 1fr);">
   <div class="metric-card metric-ksick">
     <div class="label"><span>💊</span> K-Sick</div>
     <div class="value">{total_ks:,}</div>
@@ -1309,7 +1375,17 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
   <div class="metric-card metric-wfa">
     <div class="label"><span>🏠</span> WFA</div>
     <div class="value">{total_wfa:,}</div>
-    <div class="sub">Work From Anywhere</div>
+    <div class="sub">Work From Home penuh</div>
+  </div>
+  <div class="metric-card metric-half-wfa">
+    <div class="label"><span>🏡</span> 1/2 WFA</div>
+    <div class="value">{total_hwfa:,}</div>
+    <div class="sub">Work From Home ½ hari</div>
+  </div>
+  <div class="metric-card metric-wfs">
+    <div class="label"><span>📍</span> WFS</div>
+    <div class="value">{total_wfs:,}</div>
+    <div class="sub">Work From Offsite</div>
   </div>
   <div class="metric-card metric-off">
     <div class="label"><span>🏖️</span> Off</div>
@@ -1339,8 +1415,8 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             unsafe_allow_html=True,
         )
         opt_cols_selected = []
-        oc1, oc2, oc3, oc4, oc5 = st.columns(5)
-        opt_col_ui = [oc1, oc2, oc3, oc4, oc5]
+        oc1, oc2, oc3, oc4, oc5, oc6, oc7 = st.columns(7)
+        opt_col_ui = [oc1, oc2, oc3, oc4, oc5, oc6, oc7]
         for i, (key, label, desc) in enumerate(OPTIONAL_COLS_DEF):
             with opt_col_ui[i]:
                 checked = st.checkbox(label, value=False, help=desc, key=f"col_{key}")
@@ -1479,6 +1555,8 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             K=("K", "sum"),
             AL=("AL", "sum"),
             WFA=("WFA", "sum"),
+            **{"1/2 WFA": ("1/2 WFA", "sum")},
+            WFS=("WFS", "sum"),
             Off=("Off", "sum"),
         ).reset_index().sort_values("1/2 UL", ascending=False)
         total_absen = grp["S"] + grp["Late"] + grp["1/2 UL"]
@@ -1499,6 +1577,8 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                 "K"          : st.column_config.NumberColumn("💊 K", format="%d"),
                 "AL"         : st.column_config.NumberColumn("🌴 AL", format="%d"),
                 "WFA"        : st.column_config.NumberColumn("🏠 WFA", format="%d"),
+                "1/2 WFA"    : st.column_config.NumberColumn("🏡 1/2 WFA", format="%d"),
+                "WFS"        : st.column_config.NumberColumn("📍 WFS", format="%d"),
                 "Off"        : st.column_config.NumberColumn("🏖️ Off", format="%d"),
                 "Late Rate"  : st.column_config.NumberColumn("📈 % Late", format="%.1f%%"),
                 "1/2 UL Rate": st.column_config.NumberColumn("📈 % 1/2 UL", format="%.1f%%"),

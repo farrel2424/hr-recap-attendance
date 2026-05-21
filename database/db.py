@@ -119,7 +119,7 @@ def get_rekap(periode: str):
     """
     Rekap per karyawan untuk satu periode.
     status_klasifikasi menggunakan format baru (separator '|'):
-      S, Late, 1/2 UL, UL, 1/2 AL, AL, WFA, DW, K, Off
+      S, Late, 1/2 UL, UL, 1/2 AL, AL, WFA, 1/2 WFA, WFS, DW, K, Off
     """
     with get_conn() as conn:
         rows = conn.execute("""
@@ -139,6 +139,10 @@ def get_rekap(periode: str):
                          THEN 1 ELSE 0 END) AS al,
                 SUM(CASE WHEN a.status_klasifikasi = 'WFA'
                          THEN 1 ELSE 0 END) AS wfa,
+                SUM(CASE WHEN a.status_klasifikasi = '1/2 WFA'
+                         THEN 1 ELSE 0 END) AS half_wfa,
+                SUM(CASE WHEN a.status_klasifikasi = 'WFS'
+                         THEN 1 ELSE 0 END) AS wfs,
                 SUM(CASE WHEN a.status_klasifikasi = 'DW'
                          THEN 1 ELSE 0 END) AS dw,
                 SUM(CASE WHEN a.status_klasifikasi = 'K'

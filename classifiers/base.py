@@ -127,9 +127,24 @@ def is_zero_or_dash(val) -> bool:
     return s in {"", "--", "0", "0.0", "nan"}
 
 
+def is_dash_or_empty(val) -> bool:
+    """
+    True jika nilai dianggap tidak berisi data bermakna:
+    None, NaN, "" (kosong), atau "--".
+    Berbeda dari is_zero_or_dash — angka "0" atau "0.0" TIDAK dianggap kosong.
+    Digunakan untuk cek kolom 'Offsite(Hour)' yang cukup diisi nilai apapun ≠ "--".
+    """
+    if val is None:
+        return True
+    if isinstance(val, float):
+        return pd.isna(val)
+    s = str(val).strip()
+    return s in {"", "--", "nan"}
+
+
 def parse_day_value(val) -> float | None:
     """
-    Parse nilai day count dari kolom AL / UL (e.g. 0.5, 1, 1.0).
+    Parse nilai day count dari kolom AL / UL / WFH (e.g. 0.5, 1, 1.0).
     Return None jika nol / kosong / tidak valid.
     Mendukung koma sebagai pemisah desimal (locale Indonesia: '0,5').
     """

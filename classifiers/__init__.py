@@ -10,57 +10,64 @@ Flow (Urutan Prioritas):
   1. att_result = "Normal (rest)" / "Normal (not scheduled)"
        → Off                                                   ["Off"]
 
-  2. Shift = Rest / Not scheduled / kosong / "--"
+  2. att_result = "Normal (Offsite)" DAN kolom Offsite(Hour) ≠ "--" / kosong
+       → WFS                                                   ["WFS"]
+
+  3. Shift = Rest / Not scheduled / kosong / "--"
        → dilewati (None)
 
-  3. Kolom K-Sick W Letter ≠ "0" / "--" / kosong
+  4. Kolom K-Sick W Letter ≠ "0" / "--" / kosong
        → K                                                     ["K"]
 
-  4. Kolom Number of absences(Count) ≠ "0" / "--" / kosong
+  5. Kolom Number of absences(Count) ≠ "0" / "--" / kosong
        → DW                                                    ["DW"]
 
-  5. Kolom AnnualLeave - 印尼员工年假(Day(s))
+  6. Kolom AnnualLeave - 印尼员工年假(Day(s))
        ├─ nilai = 0.5 → 1/2 AL                                 ["1/2 AL"]
        └─ nilai = 1   → AL                                     ["AL"]
 
-  6. Kolom UL-Unpaid Leave-事假(Day(s))
+  7. Kolom UL-Unpaid Leave-事假(Day(s))
        ├─ nilai = 1   → UL                                     ["UL"]
        └─ nilai = 0.5 → 1/2 UL                                 ["1/2 UL"]
 
-  7. att_result mengandung "normal" + "leave" + leave = WFH
-       → WFA                                                   ["WFA"]
+  8. Kolom WFH-WorkFromHome-家办公(Day(s))
+       ├─ nilai = 0.5 → 1/2 WFA                                ["1/2 WFA"]
+       └─ nilai = 1   → WFA                                    ["WFA"]
 
-  8. Kolom "Duration of late arrival(分钟)" (keterlambatan masuk)
+  9. Kolom "Duration of late arrival(分钟)" (keterlambatan masuk)
        ├─ 1–120 menit → Late                                   ["Late"]    (standalone)
        └─  > 120 menit → 1/2 UL                               ["1/2 UL"]  (standalone)
 
-  9. Kolom "Duration of early departure(分钟)" (pulang lebih awal)
+  10. Kolom "Duration of early departure(分钟)" (pulang lebih awal)
        ├─ 1–120 menit → Late                                   ["Late"]    (standalone)
        └─  > 120 menit → 1/2 UL                               ["1/2 UL"]  (standalone)
 
-  10. att_result TEPAT "Normal" atau "Normal（Correction of missed punch）"
+  11. att_result TEPAT "Normal" atau "Normal（Correction of missed punch）"
         → S (Shift)                                            ["S"]
 
-  11. Selain itu → tidak diklasifikasi (None)
+  12. Selain itu → tidak diklasifikasi (None)
 
 Catatan penting:
   - Semua status bersifat STANDALONE — tidak ada dual-count.
   - K dan DW ditentukan oleh KOLOM spesifik, bukan att_result.
   - AL / ½AL ditentukan oleh kolom AnnualLeave, bukan punch presence.
   - UL / ½UL ditentukan oleh kolom UL-Unpaid Leave.
+  - WFA / ½WFA ditentukan oleh kolom WFH-WorkFromHome (bukan att_result + leave string).
+  - WFS ditentukan oleh att_result = "Normal (Offsite)" DAN kolom Offsite(Hour) ≠ "--".
   - Late / ½UL dari keterlambatan ditentukan oleh kolom Duration (bukan hitung punch).
   - S hanya untuk att_result yang TEPAT sama, bukan mengandung kata "Normal".
 """
 
 import pandas as pd
 
-from .base         import parse_shift_start, parse_shift_end, SKIP_SHIFTS, S_ATT_RESULTS, is_zero_or_dash
+from .base         import parse_shift_start, parse_shift_end, SKIP_SHIFTS, S_ATT_RESULTS, is_zero_or_dash, is_dash_or_empty
 from .normal       import classify as _classify_normal
 from .late_in      import classify as _classify_late_in
 from .late_out     import classify as _classify_late_out
 from .annual_leave import classify as _classify_annual_leave
 from .ul           import classify as _classify_ul
 from .wfa          import classify as _classify_wfa
+from .wfs          import classify as _classify_wfs
 from .dw           import classify as _classify_dw
 from .k_sick       import classify as _classify_k_sick
 from .off          import classify as _classify_off, OFF_RESULTS
@@ -77,6 +84,7 @@ from .base import (         # noqa: F401
     K_THRESHOLD_MIN,
     _NOT_PUNCHED,
     is_zero_or_dash,
+    is_dash_or_empty,
     parse_day_value,
     parse_duration_minutes,
 )
@@ -94,6 +102,8 @@ def classify(
     ul_count=None,        # Kolom "UL-Unpaid Leave-事假(Day(s))"
     duration_late=None,   # Kolom "Duration of late arrival(分钟)"
     duration_early=None,  # Kolom "Duration of early departure(分钟)"
+    wfh_count=None,       # Kolom "WFH-WorkFromHome-家办公(Day(s))"
+    offsite_hour=None,    # Kolom "Offsite(Hour)"
 ) -> list[str] | None:
     """
     Klasifikasi satu baris absensi.
@@ -110,74 +120,79 @@ def classify(
         ul_count       : nilai kolom "UL-Unpaid Leave-事假(Day(s))"
         duration_late  : nilai kolom "Duration of late arrival(分钟)"
         duration_early : nilai kolom "Duration of early departure(分钟)"
+        wfh_count      : nilai kolom "WFH-WorkFromHome-家办公(Day(s))"
+        offsite_hour   : nilai kolom "Offsite(Hour)"
 
     Returns:
         list of str  — e.g. ["S"], ["Late"], ["1/2 UL"],
-                            ["UL"], ["WFA"], ["AL"], ["1/2 AL"],
-                            ["K"], ["DW"], ["Off"]
+                            ["UL"], ["WFA"], ["1/2 WFA"], ["WFS"],
+                            ["AL"], ["1/2 AL"], ["K"], ["DW"], ["Off"]
         None         — shift dilewati atau tidak bisa diklasifikasi
     """
     att_str     = str(att_result).strip() if pd.notna(att_result) else ""
-    att_lower   = att_str.lower()
-    leave_str   = str(leave_app).strip() if (leave_app is not None and pd.notna(leave_app)) else ""
-    leave_lower = leave_str.lower()
     shift_clean = str(shift_text).strip() if isinstance(shift_text, str) else ""
 
     # ── 1. Off ──────────────────────────────────────────────────────────────
     if att_str in OFF_RESULTS:
         return _classify_off()
 
-    # ── 2. Lewati shift Rest / Not scheduled / kosong ───────────────────────
+    # ── 2. WFS — Normal (Offsite) ────────────────────────────────────────────
+    #   att_result mengandung "Offsite" + kolom Offsite(Hour) terisi (bukan "--"/kosong)
+    #   (Mendukung variasi tanda kurung biasa '()' maupun full-width '（）' khas Excel)
+    if "offsite" in att_str.lower() and not is_dash_or_empty(offsite_hour):
+        return _classify_wfs()
+
+    # ── 3. Lewati shift Rest / Not scheduled / kosong ───────────────────────
     shift_start = parse_shift_start(shift_text)
     if shift_clean in SKIP_SHIFTS or shift_start is None:
-        # Jika ada punch valid → tampilkan tanpa klasifikasi ([] = "-")
         if has_punch(earliest_raw) and has_punch(latest_raw):
             return []
         return None
 
-    # ── 3. K-Sick W Letter (kolom khusus) ───────────────────────────────────
+    # ── 4. K-Sick W Letter (kolom khusus) ───────────────────────────────────
     #   Cek SEBELUM DW agar sakit-dengan-surat tidak tertimpa DW
     if not is_zero_or_dash(k_sick_count):
         return _classify_k_sick()
 
-    # ── 4. DW — Number of absences(Count) ───────────────────────────────────
+    # ── 5. DW — Number of absences(Count) ───────────────────────────────────
     if not is_zero_or_dash(absences_count):
         return _classify_dw()
 
-    # ── 5. AL — Kolom AnnualLeave ───────────────────────────────────────────
+    # ── 6. AL — Kolom AnnualLeave ───────────────────────────────────────────
     #   nilai 0.5 → 1/2 AL   |   nilai 1 → AL
     al_result = _classify_annual_leave(al_count)
     if al_result:
         return al_result
 
-    # ── 6. UL — Kolom UL-Unpaid Leave ───────────────────────────────────────
+    # ── 7. UL — Kolom UL-Unpaid Leave ───────────────────────────────────────
     #   nilai 1 → UL   |   nilai 0.5 → 1/2 UL
     ul_result = _classify_ul(ul_count)
     if ul_result:
         return ul_result
 
-    # ── 7. WFA (att Normal + leave mengandung WFH) ──────────────────────────
-    if "normal" in att_lower and "leave" in att_lower:
-        if "workfromhome" in leave_lower or "wfh" in leave_lower:
-            return _classify_wfa(earliest_raw, latest_raw)
+    # ── 8. WFA / 1/2 WFA — Kolom WFH-WorkFromHome ───────────────────────────
+    #   nilai 1 → WFA   |   nilai 0.5 → 1/2 WFA
+    wfa_result = _classify_wfa(wfh_count)
+    if wfa_result:
+        return wfa_result
 
-    # ── 8. Keterlambatan masuk — Duration of late arrival ───────────────────
+    # ── 9. Keterlambatan masuk — Duration of late arrival ───────────────────
     #   1–120 mnt → Late   |   > 120 mnt → 1/2 UL
     late_in = _classify_late_in(duration_late)
     if late_in:
         return late_in
 
-    # ── 9. Pulang lebih awal — Duration of early departure ──────────────────
+    # ── 10. Pulang lebih awal — Duration of early departure ─────────────────
     #   1–120 mnt → Late   |   > 120 mnt → 1/2 UL
     late_out = _classify_late_out(duration_early)
     if late_out:
         return late_out
 
-    # ── 10. S (Shift) — att_result TEPAT "Normal" atau "Normal（Correction…）" ─
+    # ── 11. S (Shift) — att_result TEPAT "Normal" atau "Normal（Correction…）" ─
     if att_str in S_ATT_RESULTS:
         return _classify_normal()   # returns ["S"]
 
-    # ── 11. Tidak diklasifikasi ──────────────────────────────────────────────
+    # ── 12. Tidak diklasifikasi ──────────────────────────────────────────────
     return None
 
 
@@ -193,11 +208,13 @@ def classify_str(
     ul_count=None,
     duration_late=None,
     duration_early=None,
+    wfh_count=None,
+    offsite_hour=None,
 ) -> str | None:
     """
     Versi string dari classify() — untuk disimpan ke DB (dipisah '|').
-    Menggunakan '|' bukan '/' agar tidak bertabrakan dengan '1/2 AL' / '1/2 UL'.
-    Contoh: "S", "Late", "1/2 UL", "UL", "WFA", "AL", "DW", "Off", None
+    Menggunakan '|' bukan '/' agar tidak bertabrakan dengan '1/2 AL' / '1/2 UL' / '1/2 WFA'.
+    Contoh: "S", "Late", "1/2 UL", "UL", "WFA", "1/2 WFA", "WFS", "AL", "DW", "Off", None
     """
     result = classify(
         earliest_raw, shift_text, att_result,
@@ -209,6 +226,8 @@ def classify_str(
         ul_count=ul_count,
         duration_late=duration_late,
         duration_early=duration_early,
+        wfh_count=wfh_count,
+        offsite_hour=offsite_hour,
     )
     if result is None:
         return None
