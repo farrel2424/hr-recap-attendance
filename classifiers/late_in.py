@@ -1,30 +1,30 @@
 # classifiers/late_in.py
 """
-Klasifikasi keterlambatan Punch In (Earliest) vs jam mulai shift.
+Klasifikasi keterlambatan masuk berdasarkan kolom
+"Duration of late arrival(分钟)".
 
 Aturan (menggunakan K_THRESHOLD_MIN = 120 menit):
-  Punch in terlambat ≤ 120 menit dari shift start → ["Late"]
-  Punch in terlambat  > 120 menit dari shift start → ["1/2 UL"]
-  Punch in tepat waktu / lebih awal / tidak ada punch → None
+  duration  1–120 menit → ["Late"]
+  duration  > 120 menit → ["1/2 UL"]
+  duration 0 / kosong   → None
 
 Return: list satu elemen atau None
 """
 
-from .base import parse_time_to_minutes, has_punch, K_THRESHOLD_MIN
+from .base import parse_duration_minutes, K_THRESHOLD_MIN
 
 
-def classify(earliest_raw, shift_start: int) -> list[str] | None:
-    if not has_punch(earliest_raw):
+def classify(duration_late) -> list[str] | None:
+    """
+    Args:
+        duration_late : nilai kolom "Duration of late arrival(分钟)"
+
+    Returns:
+        ["Late"], ["1/2 UL"], atau None
+    """
+    minutes = parse_duration_minutes(duration_late)
+    if minutes is None or minutes <= 0:
         return None
-
-    earliest = parse_time_to_minutes(earliest_raw)
-    if earliest is None:
-        return None
-
-    diff = earliest - shift_start
-    if diff <= 0:
-        return None
-    elif diff <= K_THRESHOLD_MIN:
+    if minutes <= K_THRESHOLD_MIN:
         return ["Late"]
-    else:
-        return ["1/2 UL"]
+    return ["1/2 UL"]

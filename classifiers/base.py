@@ -125,3 +125,49 @@ def is_zero_or_dash(val) -> bool:
         return val == 0.0
     s = str(val).strip()
     return s in {"", "--", "0", "0.0", "nan"}
+
+
+def parse_day_value(val) -> float | None:
+    """
+    Parse nilai day count dari kolom AL / UL (e.g. 0.5, 1, 1.0).
+    Return None jika nol / kosong / tidak valid.
+    Mendukung koma sebagai pemisah desimal (locale Indonesia: '0,5').
+    """
+    if val is None:
+        return None
+    if isinstance(val, float):
+        return None if (pd.isna(val) or val == 0.0) else val
+    if isinstance(val, int):
+        return None if val == 0 else float(val)
+    s = str(val).strip().replace(",", ".")
+    if s in {"", "--", "0", "0.0", "nan"}:
+        return None
+    try:
+        v = float(s)
+        return None if v == 0.0 else v
+    except ValueError:
+        return None
+
+
+def parse_duration_minutes(val) -> int | None:
+    """
+    Parse nilai durasi dalam menit dari kolom Duration of late arrival /
+    Duration of early departure.
+    Return None jika nol / kosong / tidak valid.
+    """
+    if val is None:
+        return None
+    if isinstance(val, float):
+        if pd.isna(val) or val == 0.0:
+            return None
+        return int(val)
+    if isinstance(val, int):
+        return None if val == 0 else val
+    s = str(val).strip()
+    if s in {"", "--", "0", "0.0", "nan"}:
+        return None
+    try:
+        v = float(s)
+        return None if v == 0.0 else int(v)
+    except ValueError:
+        return None

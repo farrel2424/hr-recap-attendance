@@ -1,33 +1,30 @@
 # classifiers/late_out.py
 """
-Klasifikasi keterlambatan Punch Out (Latest) vs jam selesai shift.
+Klasifikasi pulang lebih awal berdasarkan kolom
+"Duration of early departure(分钟)".
+
+Aturan (menggunakan K_THRESHOLD_MIN = 120 menit):
+  duration  1–120 menit → ["Late"]
+  duration  > 120 menit → ["1/2 UL"]
+  duration 0 / kosong   → None
+
+Return: list satu elemen atau None
 """
 
-from .base import parse_time_to_minutes, has_punch, K_THRESHOLD_MIN
+from .base import parse_duration_minutes, K_THRESHOLD_MIN
 
 
-def _normalize_overnight(shift_start: int, shift_end: int, latest_min: int) -> tuple[int, int]:
-    if shift_end < shift_start:
-        shift_end += 1440
-        if latest_min < shift_start:
-            latest_min += 1440
-    return shift_end, latest_min
+def classify(duration_early) -> list[str] | None:
+    """
+    Args:
+        duration_early : nilai kolom "Duration of early departure(分钟)"
 
-
-def classify(latest_raw, shift_end: int, shift_start: int = 0) -> list[str] | None:
-    if not has_punch(latest_raw):
+    Returns:
+        ["Late"], ["1/2 UL"], atau None
+    """
+    minutes = parse_duration_minutes(duration_early)
+    if minutes is None or minutes <= 0:
         return None
-
-    latest = parse_time_to_minutes(latest_raw)
-    if latest is None:
-        return None
-
-    norm_end, norm_latest = _normalize_overnight(shift_start, shift_end, latest)
-
-    diff = norm_end - norm_latest
-    if diff <= 0:
-        return None
-    elif diff <= K_THRESHOLD_MIN:
+    if minutes <= K_THRESHOLD_MIN:
         return ["Late"]
-    else:
-        return ["1/2 UL"]
+    return ["1/2 UL"]
