@@ -164,6 +164,38 @@ def _find_duration_early_col(df: pd.DataFrame)-> str | None: return _find_col(df
 
 
 # ──────────────────────────────────────────────────────────────
+# Helper: ikon klasifikasi
+# ──────────────────────────────────────────────────────────────
+
+# Peta status → ikon
+_STATUS_ICON = {
+    "S"     : "📋",
+    "Late"  : "🕐",
+    "1/2 UL": "⛔",
+    "UL"    : "📋",
+    "AL"    : "🌴",
+    "1/2 AL": "🌗",
+    "WFA"   : "🏠",
+    "DW"    : "🚫",
+    "K"     : "💊",
+    "Off"   : "🏖️",
+}
+
+def _fmt_klasifikasi(klas_raw) -> str:
+    """
+    Format list Klasifikasi_raw menjadi string dengan ikon.
+    Contoh: ["Late"] → "🕐 Late"  |  ["1/2 UL"] → "⛔ 1/2 UL"
+    """
+    if not klas_raw:
+        return "-"
+    parts = []
+    for s in klas_raw:
+        icon = _STATUS_ICON.get(s, "❓")
+        parts.append(f"{icon} {s}")
+    return " / ".join(parts)
+
+
+# ──────────────────────────────────────────────────────────────
 # Helpers: Rincian Harian dari File Excel (cache by file bytes)
 # ──────────────────────────────────────────────────────────────
 
@@ -203,19 +235,11 @@ def get_employee_daily(file_bytes, account):
             return 0.0
 
     df_emp["Tanggal"]   = df_emp["Time"].astype(str).apply(parse_date_from_time)
-    df_emp["Tipe"]      = df_emp["Shift"].apply(classify_shift_type)
     df_emp["Jam Kerja"] = df_emp["Actual working hours(Hour)"].apply(_parse_hours)
 
     rows = []
     for _, r in df_emp.iterrows():
-        tipe = r["Tipe"]
-        if tipe is None:
-            continue
-
-        earliest_str = str(r["Earliest"]).strip().lower() if pd.notna(r["Earliest"]) else ""
-        latest_str   = str(r["Latest"]).strip().lower()   if pd.notna(r["Latest"])   else ""
-        if earliest_str in _NOT_PUNCHED and latest_str in _NOT_PUNCHED:
-            tipe = "Off"
+        shift_clean = str(r["Shift"]).strip() if isinstance(r["Shift"], str) else ""
 
         _klas_raw = classify(
             r["Earliest"], r["Shift"], r["Attendance results"],
@@ -228,12 +252,13 @@ def get_employee_daily(file_bytes, account):
             duration_late=r.get(dur_late_col)  if dur_late_col  else None,
             duration_early=r.get(dur_early_col)if dur_early_col else None,
         )
-        _klas_display = " / ".join(_klas_raw) if _klas_raw else None
+        if _klas_raw is None:
+            continue
+        _klas_display = _fmt_klasifikasi(_klas_raw)
 
         rows.append({
             "Tanggal"        : r["Tanggal"],
-            "Shift"          : str(r["Shift"]).strip(),
-            "Tipe"           : tipe,
+            "Shift"          : shift_clean,
             "Jam Masuk"      : str(r["Earliest"]).strip() if pd.notna(r["Earliest"]) else "--",
             "Jam Keluar"     : str(r["Latest"]).strip()   if pd.notna(r["Latest"])   else "--",
             "Status"         : str(r["Attendance results"]).strip() if pd.notna(r["Attendance results"]) else "--",
@@ -245,12 +270,15 @@ def get_employee_daily(file_bytes, account):
     detail_df = pd.DataFrame(rows).sort_values("Tanggal").reset_index(drop=True)
     detail_df.insert(0, "No.", range(1, len(detail_df) + 1))
 
-    summary_df = (
-        detail_df.groupby("Tipe")
-        .agg(Hari=("Tanggal", "count"), Total_Jam=("Jam Kerja", "sum"))
-        .reset_index()
-        .sort_values("Tipe")
-    )
+    # summary berbasis Klasifikasi: "S" → Shift, "Off" → Off
+    n_shift = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "S")).sum())
+    n_off   = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "Off")).sum())
+    jam_shift = float(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "S"))]["Jam Kerja"].sum())
+    jam_off   = float(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "Off"))]["Jam Kerja"].sum())
+    summary_df = pd.DataFrame([
+        {"Kategori": "S",   "Hari": n_shift, "Total_Jam": jam_shift},
+        {"Kategori": "Off", "Hari": n_off,   "Total_Jam": jam_off},
+    ])
     return detail_df, summary_df
 
 
@@ -275,24 +303,18 @@ def get_employee_daily_from_db(account, periode):
             klas_raw = [p for p in _parts if p]
         else:
             klas_raw = None
-        klas_disp = " / ".join(klas_raw) if klas_raw else None
+        klas_disp = _fmt_klasifikasi(klas_raw)
 
-        tipe = str(r.get("tipe_shift") or "").strip() or None
+        if klas_raw is None:
+            continue
 
         jam_masuk  = str(r.get("jam_masuk")  or "").strip() or "--"
         jam_keluar = str(r.get("jam_keluar") or "").strip() or "--"
         status_ab  = str(r.get("status_absensi") or "").strip() or "--"
 
-        if jam_masuk == "--" and jam_keluar == "--" and tipe not in ("Off",):
-            tipe = tipe or "Normal"
-
-        if tipe is None:
-            continue
-
         rows.append({
             "Tanggal"        : r["tanggal"],
             "Shift"          : str(r.get("shift") or "").strip() or "--",
-            "Tipe"           : tipe,
             "Jam Masuk"      : jam_masuk,
             "Jam Keluar"     : jam_keluar,
             "Status"         : status_ab,
@@ -307,12 +329,15 @@ def get_employee_daily_from_db(account, periode):
     detail_df = pd.DataFrame(rows).sort_values("Tanggal").reset_index(drop=True)
     detail_df.insert(0, "No.", range(1, len(detail_df) + 1))
 
-    summary_df = (
-        detail_df.groupby("Tipe")
-        .agg(Hari=("Tanggal", "count"), Total_Jam=("Jam Kerja", "sum"))
-        .reset_index()
-        .sort_values("Tipe")
-    )
+    # summary berbasis Klasifikasi: "S" → Shift, "Off" → Off
+    n_shift = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "S")).sum())
+    n_off   = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "Off")).sum())
+    jam_shift = float(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "S"))]["Jam Kerja"].sum())
+    jam_off   = float(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "Off"))]["Jam Kerja"].sum())
+    summary_df = pd.DataFrame([
+        {"Kategori": "S",   "Hari": n_shift, "Total_Jam": jam_shift},
+        {"Kategori": "Off", "Hari": n_off,   "Total_Jam": jam_off},
+    ])
     return detail_df, summary_df
 
 
@@ -348,16 +373,17 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
         unsafe_allow_html=True,
     )
 
+    # ── Metric Cards: hanya Shift dan Off ──────────────────────────────────
     tipe_cfg = {
-        "Normal": ("☀️ Normal", "#f0fdf4", "#22c55e", "#166534"),
-        "Off"   : ("🏖️ Off",   "#fff7ed", "#fb923c", "#9a3412"),
+        "S"  : ("☀️ Shift", "#f0fdf4", "#22c55e", "#166534"),
+        "Off": ("🏖️ Off",   "#fff7ed", "#fb923c", "#9a3412"),
     }
     cols = st.columns(2)
-    for i, tipe in enumerate(["Normal", "Off"]):
-        row = summary_df[summary_df["Tipe"] == tipe]
+    for i, key in enumerate(["S", "Off"]):
+        row = summary_df[summary_df["Kategori"] == key]
         hari = int(row["Hari"].values[0])        if len(row) else 0
         jam  = float(row["Total_Jam"].values[0]) if len(row) else 0.0
-        label, bg, border_c, text_c = tipe_cfg[tipe]
+        label, bg, border_c, text_c = tipe_cfg[key]
         with cols[i]:
             st.markdown(
                 f'<div style="background:{bg};border-left:4px solid {border_c};'
@@ -450,7 +476,6 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
             combined = combined.drop_duplicates(subset=["Tanggal"]).reset_index(drop=True)
             combined["No."]         = range(1, len(combined) + 1)
             combined["Lebih Awal"]  = combined.apply(_menit_lebih_awal, axis=1)
-            combined["Klasifikasi"] = combined["Klasifikasi"].fillna("-")
             st.dataframe(
                 combined[["No.", "Tanggal", "Klasifikasi", "Shift", "Jam Masuk", "Jam Keluar", "Lebih Awal"]],
                 width="stretch",
@@ -550,43 +575,14 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                 column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
             )
 
-    # Expander 4: Rincian per Tipe Shift
-    tipe_counts = detail_df["Tipe"].value_counts()
-    normal_n = tipe_counts.get("Normal", 0)
-    off_n    = tipe_counts.get("Off",    0)
-    with st.expander(
-        f"🗂️ Rincian per Tipe Shift  —  ☀️ Normal: {normal_n}  |  🏖️ Off: {off_n}",
-        expanded=False,
-    ):
-        tab_normal, tab_off = st.tabs(["☀️ Normal", "🏖️ Off"])
+    # ── [DIHAPUS] Expander 4: Rincian per Tipe Shift ──────────────────────
 
-        def _render_tipe_tab(tipe_key):
-            df_tipe = detail_df[detail_df["Tipe"] == tipe_key].copy().reset_index(drop=True)
-            if df_tipe.empty:
-                st.info(f"ℹ️ Tidak ada data tipe {tipe_key} pada periode ini.")
-                return
-            df_tipe["No."]       = range(1, len(df_tipe) + 1)
-            df_tipe["Jam Kerja"] = df_tipe["Jam Kerja"].apply(lambda x: f"{x:.1f} jam" if x > 0 else "-")
-            total_jam = detail_df[detail_df["Tipe"] == tipe_key]["Jam Kerja"].sum()
-            st.caption(f"📆 {len(df_tipe)} hari  |  ⏱️ Total jam kerja: {total_jam:.1f} jam")
-            st.dataframe(
-                df_tipe[["No.", "Tanggal", "Shift", "Jam Masuk", "Jam Keluar", "Klasifikasi", "Jam Kerja"]],
-                width="stretch",
-                height=min(60 + len(df_tipe) * 35, 420),
-                hide_index=True,
-            )
-
-        with tab_normal: _render_tipe_tab("Normal")
-        with tab_off:    _render_tipe_tab("Off")
-
-    # Expander 5: Detail Lengkap
+    # Expander 4 (sebelumnya 5): Detail Lengkap per Hari — tanpa kolom Tipe
     with st.expander(f"📑 Detail Lengkap per Hari  —  {len(detail_df)} hari tercatat", expanded=False):
-        TIPE_LABEL = {"Normal": "☀️ Normal", "Off": "🏖️ Off"}
         dd = detail_df.copy()
-        dd["Tipe"]      = dd["Tipe"].map(lambda x: TIPE_LABEL.get(x, x))
         dd["Jam Kerja"] = dd["Jam Kerja"].apply(lambda x: f"{x:.1f} jam" if x > 0 else "-")
         st.dataframe(
-            dd[["No.", "Tanggal", "Tipe", "Shift", "Jam Masuk", "Jam Keluar", "Status", "Klasifikasi", "Jam Kerja"]],
+            dd[["No.", "Tanggal", "Shift", "Jam Masuk", "Jam Keluar", "Status", "Klasifikasi", "Jam Kerja"]],
             width="stretch",
             height=420,
             hide_index=True,
@@ -861,7 +857,7 @@ _LOGIC_HTML = (
 
     '<table style="width:100%;border-collapse:collapse;margin-bottom:1.2rem;">'
     '<tr style="background:#f1f5f9;">'
-    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;width:110px;">☀️ Normal</td>'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;width:110px;">☀️ Shift</td>'
     '<td style="padding:0.4rem 0.7rem;">Semua shift kerja — termasuk shift pagi, malam, S1, S2, Night, dll.</td>'
     '</tr>'
     '<tr>'
@@ -1053,7 +1049,12 @@ _LOGIC_HTML = (
     '- 🕐 Kolom <code>Duration of early departure(分钟)</code> 1-120 mnt &rarr; Late<br>'
     '- ⛔ Kolom <code>Duration of early departure(分钟)</code> &gt;120 mnt &rarr; 1/2 UL<br><br>'
     '<b>4. DW dan K tetap berbasis kolom count (tidak berubah).</b><br>'
-    '<b>5. WFA tetap berbasis att_result + Leave & Overtime Application (tidak berubah).</b>'
+    '<b>5. WFA tetap berbasis att_result + Leave & Overtime Application (tidak berubah).</b><br><br>'
+    '<b>6. Tampilan Rincian Harian (UI):</b><br>'
+    '- Metric cards di Rincian Harian Karyawan disederhanakan menjadi <b>2 kartu</b>: ☀️ Shift dan 🏖️ Off<br>'
+    '- Bagian "Rincian per Tipe Shift" dihapus (tab Normal/Off tidak lagi ditampilkan)<br>'
+    '- Kolom "Tipe" dihapus dari tabel Detail Lengkap per Hari<br>'
+    '- Kolom "Klasifikasi" kini menampilkan ikon visual untuk setiap status (misal: 🕐 Late, ⛔ 1/2 UL)'
     '</div>'
 
     # --- Aturan Semua Status Standalone ---
@@ -1087,7 +1088,7 @@ _LOGIC_HTML = (
     '- 🛡️ Karyawan dengan K / DW / AL / UL / WFA <b>tidak dikenai</b> cek keterlambatan<br>'
     '- 📊 Kolom AL &amp; UL menggunakan <code>0.5</code> untuk setengah hari; mendukung koma desimal ("0,5")<br>'
     '- 🗄️ DB menggunakan separator <code>|</code> (pipe) untuk menghindari konflik dengan "1/2"<br>'
-    '- 📊 Tipe Shift di rincian harian: <b>Normal</b> = semua hari kerja, <b>Off</b> = Rest/libur'
+    '- 📊 Tipe Shift internal: <b>Normal</b> = semua hari kerja, <b>Off</b> = Rest/libur (digunakan untuk kalkulasi metric kartu)'
     '</div>'
 
     '</div>'
