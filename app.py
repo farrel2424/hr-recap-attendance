@@ -203,8 +203,9 @@ def get_employee_daily(file_bytes, account):
 
         earliest_str = str(r["Earliest"]).strip().lower() if pd.notna(r["Earliest"]) else ""
         latest_str   = str(r["Latest"]).strip().lower()   if pd.notna(r["Latest"])   else ""
+        # ── PERUBAHAN: baris tanpa punch dikategorikan "Off" (bukan "H") ──
         if earliest_str in _NOT_PUNCHED and latest_str in _NOT_PUNCHED:
-            tipe = "H"
+            tipe = "Off"
 
         _klas_raw = classify(
             r["Earliest"], r["Shift"], r["Attendance results"],
@@ -258,7 +259,6 @@ def get_employee_daily_from_db(account, periode):
             klas_raw = [s.strip() for s in klas_str.split("|")]
         elif klas_str:
             # data lama — split by '/' tapi jaga "1/2 AL" dan "1/2 UL"
-            # dengan mengganti "1/2" dulu agar tidak terpecah
             _tmp = klas_str.replace("1/2", "\x00HALF\x00")
             _parts = [p.replace("\x00HALF\x00", "1/2").strip() for p in _tmp.split("/")]
             klas_raw = [p for p in _parts if p]
@@ -272,8 +272,9 @@ def get_employee_daily_from_db(account, periode):
         jam_keluar = str(r.get("jam_keluar") or "").strip() or "--"
         status_ab  = str(r.get("status_absensi") or "").strip() or "--"
 
-        if jam_masuk == "--" and jam_keluar == "--" and tipe not in ("H",):
-            tipe = tipe or "S1"
+        # ── PERUBAHAN: fallback tipe menggunakan "Normal" (bukan "S1") ──
+        if jam_masuk == "--" and jam_keluar == "--" and tipe not in ("Off",):
+            tipe = tipe or "Normal"
 
         if tipe is None:
             continue
@@ -337,13 +338,13 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
         unsafe_allow_html=True,
     )
 
+    # ── PERUBAHAN: hanya 2 kategori — Normal dan Off ──────────────────────
     tipe_cfg = {
-        "S1": ("☀️ S1",  "#f0fdf4", "#22c55e", "#166534"),
-        "S2": ("🌙 S2",  "#faf5ff", "#a855f7", "#6b21a8"),
-        "H" : ("🏖️ H",   "#fff7ed", "#fb923c", "#9a3412"),
+        "Normal": ("☀️ Normal", "#f0fdf4", "#22c55e", "#166534"),
+        "Off"   : ("🏖️ Off",   "#fff7ed", "#fb923c", "#9a3412"),
     }
-    cols = st.columns(3)
-    for i, tipe in enumerate(["S1", "S2", "H"]):
+    cols = st.columns(2)
+    for i, tipe in enumerate(["Normal", "Off"]):
         row = summary_df[summary_df["Tipe"] == tipe]
         hari = int(row["Hari"].values[0])        if len(row) else 0
         jam  = float(row["Total_Jam"].values[0]) if len(row) else 0.0
@@ -524,16 +525,15 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                 column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
             )
 
-    # Expander 4: Rincian per Tipe Shift
+    # ── PERUBAHAN: Expander 4 — hanya 2 tipe: Normal dan Off ─────────────
     tipe_counts = detail_df["Tipe"].value_counts()
-    s1_n = tipe_counts.get("S1", 0)
-    s2_n = tipe_counts.get("S2", 0)
-    h_n  = tipe_counts.get("H",  0)
+    normal_n = tipe_counts.get("Normal", 0)
+    off_n    = tipe_counts.get("Off",    0)
     with st.expander(
-        f"🗂️ Rincian per Tipe Shift  —  ☀️ S1: {s1_n}  |  🌙 S2: {s2_n}  |  🏖️ H: {h_n}",
+        f"🗂️ Rincian per Tipe Shift  —  ☀️ Normal: {normal_n}  |  🏖️ Off: {off_n}",
         expanded=False,
     ):
-        tab_s1, tab_s2, tab_h = st.tabs(["☀️ S1", "🌙 S2", "🏖️ H"])
+        tab_normal, tab_off = st.tabs(["☀️ Normal", "🏖️ Off"])
 
         def _render_tipe_tab(tipe_key):
             df_tipe = detail_df[detail_df["Tipe"] == tipe_key].copy().reset_index(drop=True)
@@ -551,13 +551,13 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                 hide_index=True,
             )
 
-        with tab_s1: _render_tipe_tab("S1")
-        with tab_s2: _render_tipe_tab("S2")
-        with tab_h:  _render_tipe_tab("H")
+        with tab_normal: _render_tipe_tab("Normal")
+        with tab_off:    _render_tipe_tab("Off")
 
     # Expander 5: Detail Lengkap
     with st.expander(f"📑 Detail Lengkap per Hari  —  {len(detail_df)} hari tercatat", expanded=False):
-        TIPE_LABEL = {"S1": "☀️ S1", "S2": "🌙 S2", "H": "🏖️ H"}
+        # ── PERUBAHAN: label tipe diperbarui ──
+        TIPE_LABEL = {"Normal": "☀️ Normal", "Off": "🏖️ Off"}
         dd = detail_df.copy()
         dd["Tipe"]      = dd["Tipe"].map(lambda x: TIPE_LABEL.get(x, x))
         dd["Jam Kerja"] = dd["Jam Kerja"].apply(lambda x: f"{x:.1f} jam" if x > 0 else "-")
@@ -815,10 +815,27 @@ _LOGIC_HTML = (
     'font-size:0.82rem;border-left:3px solid #0ea5e9;">'
     '<b>🗄️ Penyimpanan Data (Database)</b><br>'
     'Setiap kali file Excel diupload, <b>semua data detail harian</b> disimpan ke database SQLite secara otomatis. '
-    'Data yang tersimpan meliputi: tanggal, shift, tipe shift (S1/S2/H), jam masuk, jam keluar, '
+    'Data yang tersimpan meliputi: tanggal, shift, tipe shift (Normal/Off), jam masuk, jam keluar, '
     'jam kerja, status absensi (Attendance Results), status klasifikasi, dan data leave. '
     'Periode yang sudah tersimpan dapat dipilih kembali dari dropdown tanpa perlu upload ulang.'
     '</div>'
+
+    # --- Tipe Shift ---
+    '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
+    'text-transform:uppercase;letter-spacing:0.06em;">📅 Tipe Shift</div>'
+
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:1.2rem;">'
+    '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;width:110px;">☀️ Normal</td>'
+    '<td style="padding:0.4rem 0.7rem;">Semua shift kerja — termasuk shift pagi, malam, S1, S2, Night, dll. '
+    'Ditampilkan sebagai satu kategori tanpa pemisahan shift.</td>'
+    '</tr>'
+    '<tr>'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🏖️ Off</td>'
+    '<td style="padding:0.4rem 0.7rem;">Shift <code>"Rest"</code> — hari libur atau tidak terjadwal. '
+    'Baris tanpa punch (Earliest &amp; Latest = not punched/--) pada shift kerja juga masuk kategori Off.</td>'
+    '</tr>'
+    '</table>'
 
     # --- Judul Tabel Status ---
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
@@ -937,7 +954,10 @@ _LOGIC_HTML = (
     '- 💊 K dipicu oleh kolom <code>"K-Sick W Letter"</code> &ne; 0 / "--"<br>'
     '- Tidak ada lagi dual-count K+S &mdash; K selalu standalone<br><br>'
     '<b>4. Semua status bersifat standalone:</b><br>'
-    '- AL, 1/2 AL, WFA, K, DW tidak lagi dual-count dengan S'
+    '- AL, 1/2 AL, WFA, K, DW tidak lagi dual-count dengan S<br><br>'
+    '<b>5. Tipe Shift disederhanakan menjadi 2 kategori:</b><br>'
+    '- ☀️ <b>Normal</b>: menggantikan S1 &amp; S2 — semua shift kerja (pagi, malam, dll.) digabung<br>'
+    '- 🏖️ <b>Off</b>: menggantikan H — shift Rest atau baris tanpa punch pada hari kerja'
     '</div>'
 
     # --- Aturan Semua Status Standalone ---
@@ -969,7 +989,8 @@ _LOGIC_HTML = (
     '- 🔍 K diperiksa <em>sebelum</em> DW agar sakit-dengan-surat tidak tertimpa absensi<br>'
     '- 🛡️ Karyawan dengan K / DW / AL / WFA <b>tidak dikenai</b> cek keterlambatan<br>'
     '- 📭 Jika tidak ada Punch In (<code>not punched</code>) &rarr; tidak ada penalti Late / 1/2 UL<br>'
-    '- 🗄️ DB menggunakan separator <code>|</code> (pipe) untuk menghindari konflik dengan "1/2"'
+    '- 🗄️ DB menggunakan separator <code>|</code> (pipe) untuk menghindari konflik dengan "1/2"<br>'
+    '- 📊 Tipe Shift di rincian harian: <b>Normal</b> = semua hari kerja, <b>Off</b> = Rest/libur'
     '</div>'
 
     '</div>'

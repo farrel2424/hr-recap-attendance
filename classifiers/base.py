@@ -92,20 +92,23 @@ def has_status(raw, status: str) -> bool:
 
 def classify_shift_type(shift_text) -> str | None:
     """
-    Tentukan tipe shift: 'S1', 'S2', atau 'H' (hari libur/rest).
-    Return None jika shift tidak terjadwal.
+    Tentukan tipe shift: 'Normal' (hari kerja) atau 'Off' (hari libur/rest).
+    Return None jika shift tidak terjadwal / tidak dikenal.
+
+    Mapping:
+      "Rest"           → "Off"
+      ""  / "--" / "Not scheduled" → None  (dilewati)
+      Semua shift kerja lainnya (S1, S2, Night, dll.) → "Normal"
     """
     if not isinstance(shift_text, str):
         return None
     s = shift_text.strip()
     if s == "Rest":
-        return "H"
+        return "Off"
     if s in ("", "--", "Not scheduled"):
         return None
-    s_lower = s.lower()
-    if any(kw in s_lower for kw in ["s2", "night", "malam"]):
-        return "S2"
-    return "S1"
+    # Semua shift kerja — termasuk S1, S2, Night, malam, dll. — dianggap "Normal"
+    return "Normal"
 
 
 def is_zero_or_dash(val) -> bool:
