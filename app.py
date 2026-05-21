@@ -156,10 +156,10 @@ def _find_col(df: pd.DataFrame, prefix: str) -> str | None:
             return col
     return None
 
-def _find_ksick_col(df: pd.DataFrame)        -> str | None: return _find_col(df, "K-Sick W Letter")
-def _find_al_col(df: pd.DataFrame)           -> str | None: return _find_col(df, "AnnualLeave")
-def _find_ul_col(df: pd.DataFrame)           -> str | None: return _find_col(df, "UL-Unpaid")
-def _find_duration_late_col(df: pd.DataFrame)-> str | None: return _find_col(df, "Duration of late arrival")
+def _find_ksick_col(df: pd.DataFrame)         -> str | None: return _find_col(df, "K-Sick W Letter")
+def _find_al_col(df: pd.DataFrame)            -> str | None: return _find_col(df, "AnnualLeave")
+def _find_ul_col(df: pd.DataFrame)            -> str | None: return _find_col(df, "UL-Unpaid")
+def _find_duration_late_col(df: pd.DataFrame) -> str | None: return _find_col(df, "Duration of late arrival")
 def _find_duration_early_col(df: pd.DataFrame)-> str | None: return _find_col(df, "Duration of early departure")
 
 
@@ -179,15 +179,16 @@ _STATUS_ICON = {
     "DW"    : "🚫",
     "K"     : "💊",
     "Off"   : "🏖️",
+    "None"  : "❓",
 }
 
 def _fmt_klasifikasi(klas_raw) -> str:
     """
     Format list Klasifikasi_raw menjadi string dengan ikon.
-    Contoh: ["Late"] → "🕐 Late"  |  ["1/2 UL"] → "⛔ 1/2 UL"
+    Contoh: ["Late"] → "🕐 Late"  |  ["None"] → "❓ None"
     """
     if not klas_raw:
-        return "-"
+        return "❓ None"
     parts = []
     for s in klas_raw:
         icon = _STATUS_ICON.get(s, "❓")
@@ -246,14 +247,17 @@ def get_employee_daily(file_bytes, account):
             latest_raw=r["Latest"],
             leave_app=r.get("Leave & Overtime Application"),
             absences_count=r.get("Number of absences(Count)"),
-            k_sick_count=r.get(k_sick_col)    if k_sick_col    else None,
-            al_count=r.get(al_col)             if al_col        else None,
-            ul_count=r.get(ul_col)             if ul_col        else None,
-            duration_late=r.get(dur_late_col)  if dur_late_col  else None,
-            duration_early=r.get(dur_early_col)if dur_early_col else None,
+            k_sick_count=r.get(k_sick_col)     if k_sick_col    else None,
+            al_count=r.get(al_col)              if al_col        else None,
+            ul_count=r.get(ul_col)              if ul_col        else None,
+            duration_late=r.get(dur_late_col)   if dur_late_col  else None,
+            duration_early=r.get(dur_early_col) if dur_early_col else None,
         )
+
+        # ── REVISI: baris None tetap ditampilkan, dilabeli ["None"] ──────────
         if _klas_raw is None:
-            continue
+            _klas_raw = ["None"]
+
         _klas_display = _fmt_klasifikasi(_klas_raw)
 
         rows.append({
@@ -271,8 +275,9 @@ def get_employee_daily(file_bytes, account):
     detail_df.insert(0, "No.", range(1, len(detail_df) + 1))
 
     # summary berbasis Klasifikasi: "S" → Shift, "Off" → Off
-    n_shift = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "S")).sum())
-    n_off   = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "Off")).sum())
+    # Baris ["None"] tidak masuk ke summary Shift maupun Off
+    n_shift   = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "S")).sum())
+    n_off     = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "Off")).sum())
     jam_shift = float(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "S"))]["Jam Kerja"].sum())
     jam_off   = float(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "Off"))]["Jam Kerja"].sum())
     summary_df = pd.DataFrame([
@@ -302,11 +307,10 @@ def get_employee_daily_from_db(account, periode):
             _parts = [p.replace("\x00HALF\x00", "1/2").strip() for p in _tmp.split("/")]
             klas_raw = [p for p in _parts if p]
         else:
-            klas_raw = None
-        klas_disp = _fmt_klasifikasi(klas_raw)
+            # ── REVISI: baris tanpa klasifikasi dari DB dilabeli ["None"] ──
+            klas_raw = ["None"]
 
-        if klas_raw is None:
-            continue
+        klas_disp = _fmt_klasifikasi(klas_raw)
 
         jam_masuk  = str(r.get("jam_masuk")  or "").strip() or "--"
         jam_keluar = str(r.get("jam_keluar") or "").strip() or "--"
@@ -330,8 +334,9 @@ def get_employee_daily_from_db(account, periode):
     detail_df.insert(0, "No.", range(1, len(detail_df) + 1))
 
     # summary berbasis Klasifikasi: "S" → Shift, "Off" → Off
-    n_shift = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "S")).sum())
-    n_off   = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "Off")).sum())
+    # Baris ["None"] tidak masuk ke summary Shift maupun Off
+    n_shift   = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "S")).sum())
+    n_off     = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "Off")).sum())
     jam_shift = float(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "S"))]["Jam Kerja"].sum())
     jam_off   = float(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "Off"))]["Jam Kerja"].sum())
     summary_df = pd.DataFrame([
@@ -575,9 +580,7 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                 column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
             )
 
-    # ── [DIHAPUS] Expander 4: Rincian per Tipe Shift ──────────────────────
-
-    # Expander 4 (sebelumnya 5): Detail Lengkap per Hari — tanpa kolom Tipe
+    # Expander 4: Detail Lengkap per Hari — seluruh tanggal termasuk "None"
     with st.expander(f"📑 Detail Lengkap per Hari  —  {len(detail_df)} hari tercatat", expanded=False):
         dd = detail_df.copy()
         dd["Jam Kerja"] = dd["Jam Kerja"].apply(lambda x: f"{x:.1f} jam" if x > 0 else "-")
@@ -629,11 +632,11 @@ def process_file(file_bytes):
             latest_raw=r["Latest"],
             leave_app=r["Leave & Overtime Application"],
             absences_count=r["Number of absences(Count)"],
-            k_sick_count=r.get(k_sick_col)    if k_sick_col    else None,
-            al_count=r.get(al_col)             if al_col        else None,
-            ul_count=r.get(ul_col)             if ul_col        else None,
-            duration_late=r.get(dur_late_col)  if dur_late_col  else None,
-            duration_early=r.get(dur_early_col)if dur_early_col else None,
+            k_sick_count=r.get(k_sick_col)     if k_sick_col    else None,
+            al_count=r.get(al_col)              if al_col        else None,
+            ul_count=r.get(ul_col)              if ul_col        else None,
+            duration_late=r.get(dur_late_col)   if dur_late_col  else None,
+            duration_early=r.get(dur_early_col) if dur_early_col else None,
         ),
         axis=1,
     )
@@ -862,8 +865,7 @@ _LOGIC_HTML = (
     '</tr>'
     '<tr>'
     '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🏖️ Off</td>'
-    '<td style="padding:0.4rem 0.7rem;">Shift <code>"Rest"</code> — hari libur atau tidak terjadwal. '
-    'Baris tanpa punch (Earliest &amp; Latest = not punched/--) pada shift kerja juga masuk kategori Off.</td>'
+    '<td style="padding:0.4rem 0.7rem;">Shift <code>"Rest"</code> — hari libur atau tidak terjadwal.</td>'
     '</tr>'
     '</table>'
 
@@ -1002,6 +1004,14 @@ _LOGIC_HTML = (
     '→ <code>["WFA"]</code></td>'
     '</tr>'
 
+    '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">❓ None</td>'
+    '<td style="padding:0.4rem 0.7rem;">Baris yang tidak memenuhi satu pun kondisi di atas — '
+    'misalnya shift dilewati (Rest / kosong / "--") <b>dan</b> att_result tidak dikenali. '
+    'Tetap ditampilkan di tabel Detail Lengkap per Hari dengan label <b>"❓ None"</b> '
+    'agar tidak ada tanggal yang hilang dari tampilan.</td>'
+    '</tr>'
+
     '</table>'
 
     # --- Alur Keputusan ---
@@ -1012,7 +1022,7 @@ _LOGIC_HTML = (
     'padding:0.8rem 1rem;font-family:monospace;font-size:0.78rem;line-height:2.1;'
     'margin-bottom:1.2rem;color:#475569;">'
     '1.  🏖️ Att = "Normal (rest)" / "Normal (not scheduled)" &rarr; <b>Off</b> &mdash; selesai<br>'
-    '2.  ⏭️ Shift = Rest / Not scheduled / kosong / "--" &rarr; <b>dilewati</b> (None)<br>'
+    '2.  ⏭️ Shift = Rest / Not scheduled / kosong / "--" &rarr; <b>dilewati engine</b>, tampil sebagai <b>❓ None</b><br>'
     '3.  💊 Kolom K-Sick W Letter &ne; "0" dan "--" &rarr; <b>K</b> &mdash; selesai<br>'
     '4.  🚫 Kolom Number of absences(Count) &ne; "0" dan "--" &rarr; <b>DW</b> &mdash; selesai<br>'
     '5.  🌴 Kolom AnnualLeave = 0.5 &rarr; <b>1/2 AL</b> &mdash; selesai<br>'
@@ -1027,7 +1037,7 @@ _LOGIC_HTML = (
     '&nbsp;&nbsp;&nbsp;+-- 1-120 mnt &rarr; <b>Late</b> &mdash; selesai<br>'
     '&nbsp;&nbsp;&nbsp;+-- &gt;120 mnt &rarr; <b>1/2 UL</b> &mdash; selesai<br>'
     '10. 📋 Att TEPAT "Normal" atau "Normal（Correction of missed punch）" &rarr; <b>S</b><br>'
-    '11. ❓ Selain itu &rarr; <b>tidak diklasifikasi</b> (None / dilewati)'
+    '11. ❓ Selain itu &rarr; <b>None</b> (tetap tampil di Detail Lengkap per Hari)'
     '</div>'
 
     # --- Perubahan dari Versi Sebelumnya ---
@@ -1052,9 +1062,11 @@ _LOGIC_HTML = (
     '<b>5. WFA tetap berbasis att_result + Leave & Overtime Application (tidak berubah).</b><br><br>'
     '<b>6. Tampilan Rincian Harian (UI):</b><br>'
     '- Metric cards di Rincian Harian Karyawan disederhanakan menjadi <b>2 kartu</b>: ☀️ Shift dan 🏖️ Off<br>'
-    '- Bagian "Rincian per Tipe Shift" dihapus (tab Normal/Off tidak lagi ditampilkan)<br>'
-    '- Kolom "Tipe" dihapus dari tabel Detail Lengkap per Hari<br>'
-    '- Kolom "Klasifikasi" kini menampilkan ikon visual untuk setiap status (misal: 🕐 Late, ⛔ 1/2 UL)'
+    '- Kolom "Klasifikasi" menampilkan ikon visual untuk setiap status (misal: 🕐 Late, ⛔ 1/2 UL)<br><br>'
+    '<b>7. ❓ Baris "None" kini selalu ditampilkan di Detail Lengkap per Hari:</b><br>'
+    '- Sebelumnya baris yang tidak terklasifikasi (shift Rest/kosong/tidak dikenal) di-skip dan tidak muncul<br>'
+    '- Sekarang seluruh tanggal yang ada di file Excel selalu tampil<br>'
+    '- Baris tanpa klasifikasi dilabeli <b>"❓ None"</b> sehingga mudah diidentifikasi untuk investigasi lebih lanjut'
     '</div>'
 
     # --- Aturan Semua Status Standalone ---
@@ -1073,7 +1085,8 @@ _LOGIC_HTML = (
     '- 🏠 <b>WFA</b>: Work From Home<br>'
     '- 💊 <b>K</b>: sakit dengan surat<br>'
     '- 🚫 <b>DW</b>: tidak hadir<br>'
-    '- 🏖️ <b>Off</b>: hari libur / tidak terjadwal'
+    '- 🏖️ <b>Off</b>: hari libur / tidak terjadwal<br>'
+    '- ❓ <b>None</b>: tidak memenuhi kondisi manapun — ditampilkan untuk transparansi data'
     '</div>'
 
     # --- Pengecualian ---
@@ -1083,12 +1096,12 @@ _LOGIC_HTML = (
     '<div style="background:#fef9ec;border-radius:8px;padding:0.6rem 1rem;'
     'font-size:0.82rem;border-left:3px solid #f59e0b;">'
     '- ⏭️ Shift <code>Rest</code> / <code>Not scheduled</code> / <code>--</code> / kosong '
-    '&rarr; dilewati, <em>kecuali</em> att = "Normal (rest)" yang masuk sebagai Off<br>'
+    '&rarr; dilewati engine klasifikasi. Jika att bukan "Normal (rest)" maka akan tampil sebagai <b>❓ None</b><br>'
+    '- ❓ Baris <b>None</b> <em>tidak</em> masuk perhitungan metric Shift, Off, maupun expander manapun — hanya tampil di Detail Lengkap per Hari<br>'
     '- 🔍 K diperiksa <em>sebelum</em> DW agar sakit-dengan-surat tidak tertimpa absensi<br>'
     '- 🛡️ Karyawan dengan K / DW / AL / UL / WFA <b>tidak dikenai</b> cek keterlambatan<br>'
     '- 📊 Kolom AL &amp; UL menggunakan <code>0.5</code> untuk setengah hari; mendukung koma desimal ("0,5")<br>'
-    '- 🗄️ DB menggunakan separator <code>|</code> (pipe) untuk menghindari konflik dengan "1/2"<br>'
-    '- 📊 Tipe Shift internal: <b>Normal</b> = semua hari kerja, <b>Off</b> = Rest/libur (digunakan untuk kalkulasi metric kartu)'
+    '- 🗄️ DB menggunakan separator <code>|</code> (pipe) untuk menghindari konflik dengan "1/2"'
     '</div>'
 
     '</div>'

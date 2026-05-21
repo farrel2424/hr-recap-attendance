@@ -130,6 +130,9 @@ def classify(
     # ── 2. Lewati shift Rest / Not scheduled / kosong ───────────────────────
     shift_start = parse_shift_start(shift_text)
     if shift_clean in SKIP_SHIFTS or shift_start is None:
+        # Jika ada punch valid → tampilkan tanpa klasifikasi ([] = "-")
+        if has_punch(earliest_raw) and has_punch(latest_raw):
+            return []
         return None
 
     # ── 3. K-Sick W Letter (kolom khusus) ───────────────────────────────────
@@ -207,4 +210,6 @@ def classify_str(
         duration_late=duration_late,
         duration_early=duration_early,
     )
-    return "|".join(result) if result else None
+    if result is None:
+        return None
+    return "|".join(result)  # [] → "" (empty string, disimpan ke DB sebagai bukan NULL)
