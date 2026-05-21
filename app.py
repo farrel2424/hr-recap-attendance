@@ -5,12 +5,13 @@ Jalankan dengan: streamlit run app.py
 
 import re
 import io
+import datetime as _dt
 import pandas as pd
 import streamlit as st
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from database.db import init_db, save_periode, get_periodes, get_rekap, get_daily
+from database.db import init_db, save_periode, get_periodes, get_rekap, get_daily, get_all_daily
 from classifiers import (
     classify,
     classify_str,
@@ -154,19 +155,18 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 # ──────────────────────────────────────────────────────────────
 
 def _find_col(df: pd.DataFrame, prefix: str) -> str | None:
-    """Kembalikan nama kolom yang diawali prefix, atau None."""
     for col in df.columns:
         if str(col).startswith(prefix):
             return col
     return None
 
-def _find_ksick_col(df: pd.DataFrame)         -> str | None: return _find_col(df, "K-Sick W Letter")
-def _find_al_col(df: pd.DataFrame)            -> str | None: return _find_col(df, "AnnualLeave")
-def _find_ul_col(df: pd.DataFrame)            -> str | None: return _find_col(df, "UL-Unpaid")
-def _find_duration_late_col(df: pd.DataFrame) -> str | None: return _find_col(df, "Duration of late arrival")
-def _find_duration_early_col(df: pd.DataFrame)-> str | None: return _find_col(df, "Duration of early departure")
-def _find_wfh_col(df: pd.DataFrame)           -> str | None: return _find_col(df, "WFH-WorkFromHome")
-def _find_offsite_col(df: pd.DataFrame)       -> str | None: return _find_col(df, "Offsite(Hour)")
+def _find_ksick_col(df)         -> str | None: return _find_col(df, "K-Sick W Letter")
+def _find_al_col(df)            -> str | None: return _find_col(df, "AnnualLeave")
+def _find_ul_col(df)            -> str | None: return _find_col(df, "UL-Unpaid")
+def _find_duration_late_col(df) -> str | None: return _find_col(df, "Duration of late arrival")
+def _find_duration_early_col(df)-> str | None: return _find_col(df, "Duration of early departure")
+def _find_wfh_col(df)           -> str | None: return _find_col(df, "WFH-WorkFromHome")
+def _find_offsite_col(df)       -> str | None: return _find_col(df, "Offsite(Hour)")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -197,6 +197,42 @@ def _fmt_klasifikasi(klas_raw) -> str:
         icon = _STATUS_ICON.get(s, "❓")
         parts.append(f"{icon} {s}")
     return " / ".join(parts)
+
+
+# ──────────────────────────────────────────────────────────────
+# Helper: Ekspor Kalender — Label & Warna Sel
+# ──────────────────────────────────────────────────────────────
+
+def _extract_shift_short_name(shift_text: str) -> str:
+    """Ekstrak nama pendek dari teks shift. Contoh: 'S1：08:00-17:00' → 'S1'."""
+    if not shift_text or shift_text in {"", "--", "Rest", "Not scheduled"}:
+        return ""
+    s = str(shift_text).strip()
+    # Hapus keterangan waktu setelah tanda titik dua (biasa/full-width) atau spasi+digit
+    s = re.sub(r'[\s：:]+\d{1,2}:\d{2}.*', '', s)
+    return s.strip()[:8]
+
+
+def _get_cell_display(shift_text: str, classification) -> str:
+    """Tentukan nilai tampil untuk sel kalender berdasarkan klasifikasi."""
+    _MAP = {
+        "Off":    "OFF",
+        "AL":     "AL",
+        "1/2 AL": "0,5AL",
+        "WFA":    "WFA",
+        "1/2 WFA":"0,5WFA",
+        "WFS":    "WFS",
+        "K":      "K",
+        "DW":     "DW",
+        "UL":     "UL",
+        "1/2 UL": "0,5UL",
+        "Late":   "L",
+    }
+    if classification in _MAP:
+        return _MAP[classification]
+    if classification == "S":
+        return _extract_shift_short_name(shift_text)
+    return ""
 
 
 # ──────────────────────────────────────────────────────────────
@@ -344,6 +380,102 @@ def get_employee_daily_from_db(account, periode):
 
 
 # ──────────────────────────────────────────────────────────────
+# Helper: Baca semua data harian dari file Excel (untuk ekspor kalender)
+# ──────────────────────────────────────────────────────────────
+
+@st.cache_data(show_spinner=False)
+def get_all_daily_for_calendar(file_bytes):
+    """
+    Baca seluruh baris absensi dari file Excel dan kembalikan DataFrame harian.
+    Kolom: Account, Name, Date, Shift, Classification
+    Digunakan sebagai sumber data ekspor kalender.
+    """
+    buf = io.BytesIO(file_bytes)
+    df_all = pd.read_excel(
+        buf,
+        sheet_name="General statistics and attendan",
+        header=4,
+        dtype={"Earliest": str, "Latest": str},
+    )
+    k_sick_col    = _find_ksick_col(df_all)
+    al_col        = _find_al_col(df_all)
+    ul_col        = _find_ul_col(df_all)
+    dur_late_col  = _find_duration_late_col(df_all)
+    dur_early_col = _find_duration_early_col(df_all)
+    wfh_col       = _find_wfh_col(df_all)
+    offsite_col   = _find_offsite_col(df_all)
+
+    df_all = df_all[df_all["Account"].notna() & df_all["Rules"].notna()]
+    df_all = df_all[~df_all["Account"].astype(str).str.strip().isin(["", "--"])]
+
+    rows = []
+    for _, r in df_all.iterrows():
+        account = str(r["Account"]).strip()
+        name    = str(r["Name"]).strip() if pd.notna(r.get("Name")) else ""
+        shift_t = str(r["Shift"]).strip() if isinstance(r["Shift"], str) else ""
+
+        raw_time = str(r.get("Time", ""))
+        m = re.search(r'(\d{4})/(\d{2})/(\d{2})', raw_time)
+        if not m:
+            continue
+        date_str = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+
+        klas_raw = classify(
+            r["Earliest"], r["Shift"], r["Attendance results"],
+            latest_raw=r["Latest"],
+            leave_app=r.get("Leave & Overtime Application"),
+            absences_count=r.get("Number of absences(Count)"),
+            k_sick_count=r.get(k_sick_col)     if k_sick_col    else None,
+            al_count=r.get(al_col)              if al_col        else None,
+            ul_count=r.get(ul_col)              if ul_col        else None,
+            duration_late=r.get(dur_late_col)   if dur_late_col  else None,
+            duration_early=r.get(dur_early_col) if dur_early_col else None,
+            wfh_count=r.get(wfh_col)            if wfh_col       else None,
+            offsite_hour=r.get(offsite_col)     if offsite_col   else None,
+        )
+        classification = klas_raw[0] if klas_raw else None
+
+        rows.append({
+            "Account":        account,
+            "Name":           name,
+            "Date":           date_str,
+            "Shift":          shift_t,
+            "Classification": classification,
+        })
+    return pd.DataFrame(rows)
+
+
+def _get_all_daily_from_db(periode):
+    """Ambil semua data harian dari DB dan format untuk kalender ekspor."""
+    if not periode:
+        return pd.DataFrame(columns=["Account", "Name", "Date", "Shift", "Classification"])
+    try:
+        df_db = get_all_daily(periode)
+    except Exception:
+        return pd.DataFrame(columns=["Account", "Name", "Date", "Shift", "Classification"])
+    if df_db.empty:
+        return pd.DataFrame(columns=["Account", "Name", "Date", "Shift", "Classification"])
+
+    rows = []
+    for _, r in df_db.iterrows():
+        klas_str = str(r.get("status_klasifikasi") or "").strip()
+        if "|" in klas_str:
+            parts = [p.strip() for p in klas_str.split("|")]
+            klas = parts[0] if parts else None
+        else:
+            klas = klas_str if klas_str else None
+
+        rows.append({
+            "Account":        str(r["account"]).strip(),
+            "Name":           str(r["nama"]).strip(),
+            "Date":           str(r["tanggal"]).strip(),
+            "Shift":          str(r.get("shift") or "").strip(),
+            "Classification": klas,
+        })
+    return pd.DataFrame(rows)
+
+
+# ──────────────────────────────────────────────────────────────
 # Dialog: Rincian Harian Karyawan
 # ──────────────────────────────────────────────────────────────
 
@@ -375,7 +507,6 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
         unsafe_allow_html=True,
     )
 
-    # ── Metric Cards: hanya Shift dan Off ──────────────────────────────────
     tipe_cfg = {
         "S"  : ("☀️ Shift", "#f0fdf4", "#22c55e", "#166534"),
         "Off": ("🏖️ Off",   "#fff7ed", "#fb923c", "#9a3412"),
@@ -438,7 +569,6 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
     n_dw     = len(dw_df)
     n_k_sick = len(k_sick_df)
 
-    # Expander 1: Pelanggaran Jam Kerja
     with st.expander(
         f"⚠️ Pelanggaran Jam Kerja  —  🕐 Late: {n_late}  |  ⛔ 1/2 UL: {n_k}  |  📋 UL: {n_ul}",
         expanded=False,
@@ -492,7 +622,6 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                 },
             )
 
-    # Expander 2: DW & K-Sick
     with st.expander(
         f"🏥 DW & Sakit  —  🚫 DW: {n_dw}  |  💊 K-Sick: {n_k_sick}",
         expanded=False,
@@ -541,7 +670,6 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                     column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
                 )
 
-    # Expander 3: Leave (AL / 1/2 AL / UL / WFA / 1/2 WFA / WFS)
     with st.expander(
         f"🌴 Rincian Leave & WFx  —  📅 AL: {n_al}  |  🏠 WFA: {n_wfa}  |  🏡 1/2 WFA: {n_hwfa}  |  📍 WFS: {n_wfs}  |  📋 UL: {n_ul}",
         expanded=False,
@@ -584,7 +712,6 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                 column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
             )
 
-    # Expander 4: Detail Lengkap per Hari
     with st.expander(f"📑 Detail Lengkap per Hari  —  {len(detail_df)} hari tercatat", expanded=False):
         dd = detail_df.copy()
         dd["Jam Kerja"] = dd["Jam Kerja"].apply(lambda x: f"{x:.1f} jam" if x > 0 else "-")
@@ -697,123 +824,171 @@ def process_file(file_bytes):
 
 
 # ──────────────────────────────────────────────────────────────
-# Export Excel
+# Ekspor Kalender Harian (.xlsx)
 # ──────────────────────────────────────────────────────────────
 
-def to_excel_bytes(df, time_range=""):
+# Warna latar tiap kode status di sel kalender
+_CALENDAR_BG = {
+    "OFF":    "FF4444",   # merah terang
+    "AL":     "70AD47",   # hijau
+    "0,5AL":  "A9D18E",   # hijau muda
+    "WFA":    "9DC3E6",   # biru muda
+    "0,5WFA": "BDD7EE",   # biru sangat muda
+    "WFS":    "4BACC6",   # teal
+    "K":      "FFB2D3",   # pink
+    "DW":     "FF7C39",   # oranye
+    "UL":     "C00000",   # merah tua
+    "0,5UL":  "FF6B6B",   # merah muda
+    "L":      "FFD966",   # kuning
+}
+# Warna teks putih untuk latar gelap
+_CALENDAR_FC = {
+    "OFF": "FFFFFF", "AL": "FFFFFF", "WFS": "FFFFFF",
+    "DW":  "FFFFFF", "UL": "FFFFFF",
+}
+_DAY_ABBR = {0:"Mon", 1:"Tue", 2:"Wed", 3:"Thu", 4:"Fri", 5:"Sat", 6:"Sun"}
+
+
+def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
+    """
+    Buat file Excel format kalender harian.
+
+    Layout:
+      Baris 1  : Judul (judul merged)
+      Baris 2  : NO | KTP | NAME | 1 | 2 | 3 | ... (angka tanggal)
+      Baris 3  : (kosong) | (kosong) | (kosong) | Mon | Tue | ... (singkatan hari)
+      Baris 4+ : data per karyawan
+
+    Isi sel harian:
+      - Status khusus (OFF / AL / WFS / dll.) → kode label
+      - Status S (normal hadir) → nama pendek shift (misal S1, S2)
+      - Tidak ada data → kosong
+    """
     wb = Workbook()
     ws = wb.active
-    ws.title = "Rekap"
+    ws.title = "Absensi"
 
-    DARK   = PatternFill("solid", fgColor="0F2027")
-    BLUE   = PatternFill("solid", fgColor="2E75B6")
-    ALT    = PatternFill("solid", fgColor="EFF6FF")
-    WHITE  = PatternFill("solid", fgColor="FFFFFF")
-    GREEN  = PatternFill("solid", fgColor="F0FDF4")
-    YELLOW = PatternFill("solid", fgColor="FFFBEB")
-    RED    = PatternFill("solid", fgColor="FEF2F2")
-    PURPLE = PatternFill("solid", fgColor="FDF4FF")
-    PINK   = PatternFill("solid", fgColor="FFF1F2")
-    CYAN   = PatternFill("solid", fgColor="F0F9FF")
-    LTBLUE = PatternFill("solid", fgColor="EFF6FF")
-    INDIGO = PatternFill("solid", fgColor="EEF2FF")
-    ORANGE = PatternFill("solid", fgColor="FFF7ED")
-    ROSE   = PatternFill("solid", fgColor="FDF2F8")
-    SLATE  = PatternFill("solid", fgColor="F8FAFC")
-    TEAL   = PatternFill("solid", fgColor="F0FDFA")
-
-    thin   = Side(style="thin", color="CBD5E1")
+    thin   = Side(style="thin", color="D9D9D9")
     BORDER = Border(left=thin, right=thin, top=thin, bottom=thin)
     CENTER = Alignment(horizontal="center", vertical="center")
     LEFT   = Alignment(horizontal="left",   vertical="center")
 
-    # 16 kolom total: No., Nama, Account, Rules + 12 status
-    ws.merge_cells("A1:P1")
-    ws["A1"] = "Summary Attendance"
-    ws["A1"].font      = Font(name="Calibri", bold=True, color="FFFFFF", size=14)
-    ws["A1"].fill      = DARK
-    ws["A1"].alignment = CENTER
-    ws.row_dimensions[1].height = 30
+    HEADER_FILL = PatternFill("solid", fgColor="2E75B6")
+    DARK_FILL   = PatternFill("solid", fgColor="1F3864")
+    WHITE_FILL  = PatternFill("solid", fgColor="FFFFFF")
+    ALT_FILL    = PatternFill("solid", fgColor="F5F5F5")
 
-    ws.merge_cells("A2:P2")
-    ws["A2"] = f"Time Range: {time_range}" if time_range else "Rekap Absensi"
-    ws["A2"].font      = Font(name="Calibri", color="FFFFFF", size=9, italic=True)
-    ws["A2"].fill      = BLUE
-    ws["A2"].alignment = CENTER
-    ws.row_dimensions[2].height = 16
+    # ── Kumpulkan tanggal unik ──────────────────────────────────────────────
+    dates = sorted(df_daily["Date"].dropna().unique()) if not df_daily.empty else []
 
-    headers = ["No.", "Nama", "Account", "Rules",
-               "S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
-               "WFA", "1/2 WFA", "WFS",
-               "DW", "K", "Off"]
-    for ci, h in enumerate(headers, 1):
-        c = ws.cell(row=3, column=ci, value=h)
-        c.font      = Font(name="Calibri", bold=True, color="FFFFFF", size=10)
-        c.fill      = BLUE
-        c.alignment = CENTER
-        c.border    = BORDER
-    ws.row_dimensions[3].height = 20
+    # ── Lookup harian: {account: {date: (shift, classification)}} ──────────
+    daily_map: dict = {}
+    for _, row in df_daily.iterrows():
+        acc = row["Account"]
+        if acc not in daily_map:
+            daily_map[acc] = {}
+        daily_map[acc][row["Date"]] = (
+            row.get("Shift", ""),
+            row.get("Classification"),
+        )
 
-    # col index → (fill, text color)
-    col_style = {
-        5:  (GREEN,  "166534"),   # S
-        6:  (YELLOW, "92400E"),   # Late
-        7:  (RED,    "991B1B"),   # 1/2 UL
-        8:  (TEAL,   "0F766E"),   # UL
-        9:  (PURPLE, "7E22CE"),   # AL
-        10: (PINK,   "BE123C"),   # 1/2 AL
-        11: (CYAN,   "0369A1"),   # WFA
-        12: (LTBLUE, "1D4ED8"),   # 1/2 WFA
-        13: (INDIGO, "3730A3"),   # WFS
-        14: (ORANGE, "EA580C"),   # DW
-        15: (ROSE,   "DB2777"),   # K
-        16: (SLATE,  "475569"),   # Off
-    }
+    total_cols = 3 + len(dates)
 
-    ALL_STATUS_COLS = ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
-                       "WFA", "1/2 WFA", "WFS", "DW", "K", "Off"]
+    # ── Baris 1: Judul ──────────────────────────────────────────────────────
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(total_cols, 3))
+    c = ws.cell(1, 1)
+    c.value     = f"Rekap Absensi Harian — {time_range}" if time_range else "Rekap Absensi Harian"
+    c.font      = Font(name="Arial", bold=True, color="FFFFFF", size=13)
+    c.fill      = DARK_FILL
+    c.alignment = CENTER
+    ws.row_dimensions[1].height = 26
 
-    for ri, (_, row) in enumerate(df.iterrows()):
-        er = ri + 4
-        base_fill = ALT if ri % 2 == 0 else WHITE
-        vals = [row["No."], row["Nama"], row["Account"], row["Rules"]] + \
-               [row.get(c, 0) for c in ALL_STATUS_COLS]
-        for ci, v in enumerate(vals, 1):
-            c = ws.cell(row=er, column=ci, value=v)
+    # ── Baris 2: NO / KTP / NAME / angka tanggal ────────────────────────────
+    for ci, h in enumerate(["NO", "KTP", "NAME"], 1):
+        c = ws.cell(2, ci)
+        c.value = h
+        c.font  = Font(name="Arial", bold=True, color="FFFFFF", size=10)
+        c.fill  = HEADER_FILL; c.alignment = CENTER; c.border = BORDER
+
+    for di, d in enumerate(dates):
+        day_num = int(d.split("-")[2])
+        ci = 4 + di
+        c = ws.cell(2, ci)
+        c.value = day_num
+        c.font  = Font(name="Arial", bold=True, color="FFFFFF", size=10)
+        c.fill  = HEADER_FILL; c.alignment = CENTER; c.border = BORDER
+    ws.row_dimensions[2].height = 18
+
+    # ── Baris 3: Singkatan hari ──────────────────────────────────────────────
+    for ci in range(1, 4):
+        c = ws.cell(3, ci); c.fill = HEADER_FILL; c.border = BORDER
+
+    for di, d in enumerate(dates):
+        try:
+            dt       = _dt.date.fromisoformat(d)
+            day_abbr = _DAY_ABBR[dt.weekday()]
+        except Exception:
+            day_abbr = ""
+        ci = 4 + di
+        c = ws.cell(3, ci)
+        c.value = day_abbr
+        c.font  = Font(name="Arial", size=9, color="FFFFFF")
+        c.fill  = HEADER_FILL; c.alignment = CENTER; c.border = BORDER
+    ws.row_dimensions[3].height = 14
+
+    # ── Baris data karyawan ──────────────────────────────────────────────────
+    emp_list = df_employees[["Nama", "Account"]].drop_duplicates("Account").to_dict("records")
+
+    for ri, emp in enumerate(emp_list):
+        er        = ri + 4
+        base_fill = WHITE_FILL if ri % 2 == 0 else ALT_FILL
+
+        # NO
+        c = ws.cell(er, 1)
+        c.value = ri + 1
+        c.font  = Font(name="Arial", size=9)
+        c.fill  = base_fill; c.alignment = CENTER; c.border = BORDER
+
+        # KTP (kosong sesuai permintaan)
+        c = ws.cell(er, 2)
+        c.fill = base_fill; c.border = BORDER
+
+        # NAME
+        c = ws.cell(er, 3)
+        c.value = emp["Nama"]
+        c.font  = Font(name="Arial", size=9)
+        c.fill  = base_fill; c.alignment = LEFT; c.border = BORDER
+
+        # Sel harian
+        acc = emp["Account"]
+        for di, d in enumerate(dates):
+            ci = 4 + di
+            c  = ws.cell(er, ci)
             c.border = BORDER
-            c.font   = Font(name="Calibri", size=10)
-            if ci <= 4:
-                c.fill      = base_fill
-                c.alignment = LEFT if ci > 1 else CENTER
+
+            shift_t, klas = daily_map.get(acc, {}).get(d, ("", None))
+            label = _get_cell_display(shift_t, klas)
+
+            c.value = label
+            if label in _CALENDAR_BG:
+                c.fill = PatternFill("solid", fgColor=_CALENDAR_BG[label])
+                fc_hex = _CALENDAR_FC.get(label, "000000")
+                c.font = Font(name="Arial", size=8, bold=True, color=fc_hex)
             else:
-                fill_pos, fc_pos = col_style[ci]
-                c.fill      = fill_pos if v > 0 else base_fill
-                c.font      = Font(name="Calibri", size=10,
-                                   bold=(v > 0),
-                                   color=fc_pos if v > 0 else "000000")
-                c.alignment = CENTER
-        ws.row_dimensions[er].height = 17
+                c.fill = base_fill
+                c.font = Font(name="Arial", size=8, color="000000")
+            c.alignment = CENTER
 
-    tr = len(df) + 4
-    ws.merge_cells(f"A{tr}:D{tr}")
-    ws[f"A{tr}"]           = "TOTAL"
-    ws[f"A{tr}"].font      = Font(name="Calibri", bold=True, color="FFFFFF", size=10)
-    ws[f"A{tr}"].fill      = DARK
-    ws[f"A{tr}"].alignment = CENTER
-    ws[f"A{tr}"].border    = BORDER
-    for ci in range(5, 17):
-        c       = ws.cell(row=tr, column=ci)
-        c.value = f"=SUM({get_column_letter(ci)}4:{get_column_letter(ci)}{tr-1})"
-        c.font  = Font(name="Calibri", bold=True, color="FFFFFF", size=10)
-        c.fill  = DARK
-        c.alignment = CENTER
-        c.border    = BORDER
+        ws.row_dimensions[er].height = 16
 
-    for ci, w in enumerate([6, 32, 24, 28, 10, 10, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8], 1):
-        ws.column_dimensions[get_column_letter(ci)].width = w
+    # ── Lebar kolom ──────────────────────────────────────────────────────────
+    ws.column_dimensions["A"].width = 5     # NO
+    ws.column_dimensions["B"].width = 12    # KTP
+    ws.column_dimensions["C"].width = 28    # NAME
+    for di in range(len(dates)):
+        ws.column_dimensions[get_column_letter(4 + di)].width = 5.5
 
-    ws.freeze_panes    = "A4"
-    ws.auto_filter.ref = f"A3:P{tr-1}"
+    ws.freeze_panes = "D4"
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -821,7 +996,7 @@ def to_excel_bytes(df, time_range=""):
 
 
 # ──────────────────────────────────────────────────────────────
-# Definisi kolom
+# Definisi kolom tampilan tabel
 # ──────────────────────────────────────────────────────────────
 
 CORE_COLS = ["No.", "Nama", "Account", "Rules", "S", "Late", "1/2 UL", "UL", "DW"]
@@ -875,6 +1050,80 @@ _LOGIC_HTML = (
     'jam kerja, status absensi (Attendance Results), status klasifikasi, dan data leave. '
     'Periode yang sudah tersimpan dapat dipilih kembali dari dropdown tanpa perlu upload ulang.'
     '</div>'
+
+    # --- Format Ekspor Kalender ---
+    '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
+    'text-transform:uppercase;letter-spacing:0.06em;">📊 Format Ekspor Kalender Harian (.xlsx)</div>'
+
+    '<div style="background:#f0fdf4;border-radius:8px;padding:0.7rem 1rem;margin-bottom:1.2rem;'
+    'font-size:0.82rem;border-left:3px solid #22c55e;">'
+    '<b>Layout:</b> Baris = karyawan, Kolom = tanggal (1 s/d akhir bulan)<br>'
+    '<b>Struktur baris header:</b><br>'
+    '&nbsp;&nbsp;• Baris 1 — Judul (Rekap Absensi Harian + rentang waktu)<br>'
+    '&nbsp;&nbsp;• Baris 2 — <b>NO</b> | <b>KTP</b> (dikosongkan) | <b>NAME</b> | angka tanggal (1, 2, 3 …)<br>'
+    '&nbsp;&nbsp;• Baris 3 — (kosong) | (kosong) | (kosong) | singkatan hari (Mon, Tue, Wed …)<br>'
+    '&nbsp;&nbsp;• Baris 4+ — data harian per karyawan<br><br>'
+    '<b>Isi sel harian:</b><br>'
+    '&nbsp;&nbsp;• Status S (hadir normal) → <b>nama pendek shift</b> (misal <code>S1</code>, <code>S2</code>)<br>'
+    '&nbsp;&nbsp;• Status khusus → <b>kode label</b> dengan warna latar:<br>'
+    '</div>'
+
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:1.2rem;">'
+    '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;">Label Sel</td>'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;">Status Klasifikasi</td>'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;">Warna Latar</td>'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;">Teks</td>'
+    '</tr>'
+    '<tr><td style="padding:0.3rem 0.7rem;"><b>S1 / S2 / dst.</b></td>'
+    '<td style="padding:0.3rem 0.7rem;">S — Hadir normal</td>'
+    '<td style="padding:0.3rem 0.7rem;">Putih / abu muda (alternating)</td>'
+    '<td style="padding:0.3rem 0.7rem;">Hitam</td></tr>'
+    '<tr style="background:#f1f5f9;"><td style="padding:0.3rem 0.7rem;font-weight:700;color:#FFFFFF;background:#FF4444;border-radius:3px;">OFF</td>'
+    '<td style="padding:0.3rem 0.7rem;">Off — Hari libur / not scheduled</td>'
+    '<td style="padding:0.3rem 0.7rem;">#FF4444 (merah terang)</td>'
+    '<td style="padding:0.3rem 0.7rem;">Putih</td></tr>'
+    '<tr><td style="padding:0.3rem 0.7rem;font-weight:700;color:#FFFFFF;background:#70AD47;border-radius:3px;">AL</td>'
+    '<td style="padding:0.3rem 0.7rem;">AL — Annual Leave penuh</td>'
+    '<td style="padding:0.3rem 0.7rem;">#70AD47 (hijau)</td>'
+    '<td style="padding:0.3rem 0.7rem;">Putih</td></tr>'
+    '<tr style="background:#f1f5f9;"><td style="padding:0.3rem 0.7rem;font-weight:700;background:#A9D18E;border-radius:3px;">0,5AL</td>'
+    '<td style="padding:0.3rem 0.7rem;">1/2 AL — Annual Leave ½ hari</td>'
+    '<td style="padding:0.3rem 0.7rem;">#A9D18E (hijau muda)</td>'
+    '<td style="padding:0.3rem 0.7rem;">Hitam</td></tr>'
+    '<tr><td style="padding:0.3rem 0.7rem;font-weight:700;color:#FFFFFF;background:#4BACC6;border-radius:3px;">WFS</td>'
+    '<td style="padding:0.3rem 0.7rem;">WFS — Work From Offsite</td>'
+    '<td style="padding:0.3rem 0.7rem;">#4BACC6 (teal)</td>'
+    '<td style="padding:0.3rem 0.7rem;">Putih</td></tr>'
+    '<tr style="background:#f1f5f9;"><td style="padding:0.3rem 0.7rem;font-weight:700;background:#9DC3E6;border-radius:3px;">WFA</td>'
+    '<td style="padding:0.3rem 0.7rem;">WFA — Work From Home penuh</td>'
+    '<td style="padding:0.3rem 0.7rem;">#9DC3E6 (biru muda)</td>'
+    '<td style="padding:0.3rem 0.7rem;">Hitam</td></tr>'
+    '<tr><td style="padding:0.3rem 0.7rem;font-weight:700;background:#BDD7EE;border-radius:3px;">0,5WFA</td>'
+    '<td style="padding:0.3rem 0.7rem;">1/2 WFA — WFH ½ hari</td>'
+    '<td style="padding:0.3rem 0.7rem;">#BDD7EE (biru sangat muda)</td>'
+    '<td style="padding:0.3rem 0.7rem;">Hitam</td></tr>'
+    '<tr style="background:#f1f5f9;"><td style="padding:0.3rem 0.7rem;font-weight:700;color:#FFFFFF;background:#C00000;border-radius:3px;">UL</td>'
+    '<td style="padding:0.3rem 0.7rem;">UL — Unpaid Leave penuh</td>'
+    '<td style="padding:0.3rem 0.7rem;">#C00000 (merah tua)</td>'
+    '<td style="padding:0.3rem 0.7rem;">Putih</td></tr>'
+    '<tr><td style="padding:0.3rem 0.7rem;font-weight:700;background:#FF6B6B;border-radius:3px;">0,5UL</td>'
+    '<td style="padding:0.3rem 0.7rem;">1/2 UL — Unpaid Leave ½ hari / terlambat &gt;120 mnt</td>'
+    '<td style="padding:0.3rem 0.7rem;">#FF6B6B (merah muda)</td>'
+    '<td style="padding:0.3rem 0.7rem;">Hitam</td></tr>'
+    '<tr style="background:#f1f5f9;"><td style="padding:0.3rem 0.7rem;font-weight:700;background:#FFD966;border-radius:3px;">L</td>'
+    '<td style="padding:0.3rem 0.7rem;">Late — Terlambat / pulang cepat 1-120 mnt</td>'
+    '<td style="padding:0.3rem 0.7rm;">#FFD966 (kuning)</td>'
+    '<td style="padding:0.3rem 0.7rem;">Hitam</td></tr>'
+    '<tr><td style="padding:0.3rem 0.7rem;font-weight:700;background:#FFB2D3;border-radius:3px;">K</td>'
+    '<td style="padding:0.3rem 0.7rem;">K — Sakit dengan Surat</td>'
+    '<td style="padding:0.3rem 0.7rem;">#FFB2D3 (pink)</td>'
+    '<td style="padding:0.3rem 0.7rem;">Hitam</td></tr>'
+    '<tr style="background:#f1f5f9;"><td style="padding:0.3rem 0.7rem;font-weight:700;color:#FFFFFF;background:#FF7C39;border-radius:3px;">DW</td>'
+    '<td style="padding:0.3rem 0.7rem;">DW — Tidak Hadir (Absence)</td>'
+    '<td style="padding:0.3rem 0.7rem;">#FF7C39 (oranye)</td>'
+    '<td style="padding:0.3rem 0.7rem;">Putih</td></tr>'
+    '</table>'
 
     # --- Tipe Shift ---
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
@@ -1115,10 +1364,18 @@ _LOGIC_HTML = (
     '- 🏡 Kolom <code>WFH-WorkFromHome-家办公(Day(s))</code> = <b>0.5</b> &rarr; <b>1/2 WFA</b><br>'
     '- Ditampilkan di metric card, tabel summary, dan ekspor Excel<br><br>'
 
-    '<b>4. AL / 1/2 AL tetap berbasis kolom AnnualLeave (tidak berubah).</b><br>'
-    '<b>5. UL / 1/2 UL tetap berbasis kolom UL-Unpaid Leave (tidak berubah).</b><br>'
-    '<b>6. DW dan K tetap berbasis kolom count (tidak berubah).</b><br>'
-    '<b>7. Late / 1/2 UL tetap berbasis kolom Duration (tidak berubah).</b>'
+    '<b>4. 📊 Format Ekspor diubah menjadi Kalender Harian:</b><br>'
+    '- <b>Sebelumnya:</b> tabel ringkasan (baris = karyawan, kolom = hitungan status per periode)<br>'
+    '- <b>Sekarang:</b> kalender grid (baris = karyawan, kolom = tanggal 1 s/d akhir bulan)<br>'
+    '- Sel menampilkan <b>nama shift pendek</b> (S1, S2, dll.) untuk hari normal, '
+    'atau <b>kode label berwarna</b> (OFF, AL, WFS, L, 0,5UL, dst.) untuk status khusus<br>'
+    '- Kolom KTP dikosongkan (diisi manual jika diperlukan)<br>'
+    '- Freeze panes aktif di kolom D baris 4 agar header & nama tetap terlihat saat scroll<br><br>'
+
+    '<b>5. AL / 1/2 AL tetap berbasis kolom AnnualLeave (tidak berubah).</b><br>'
+    '<b>6. UL / 1/2 UL tetap berbasis kolom UL-Unpaid Leave (tidak berubah).</b><br>'
+    '<b>7. DW dan K tetap berbasis kolom count (tidak berubah).</b><br>'
+    '<b>8. Late / 1/2 UL tetap berbasis kolom Duration (tidak berubah).</b>'
     '</div>'
 
     # --- Semua Status Standalone ---
@@ -1128,19 +1385,19 @@ _LOGIC_HTML = (
     '<div style="background:#eff6ff;border-radius:8px;padding:0.6rem 1rem;margin-bottom:1.2rem;'
     'font-size:0.82rem;border-left:3px solid #3b82f6;">'
     'Setiap baris absensi menghasilkan tepat <b>satu status</b>:<br>'
-    '- 📋 <b>S</b>: hadir tepat waktu (att TEPAT "Normal" / "Normal（Correction…）")<br>'
-    '- 🕐 <b>Late</b>: keterlambatan/pulang cepat 1-120 mnt<br>'
-    '- ⛔ <b>1/2 UL</b>: keterlambatan/pulang cepat &gt;120 mnt, atau UL kolom 0.5<br>'
-    '- 📋 <b>UL</b>: Unpaid Leave penuh (kolom UL = 1)<br>'
-    '- 🌴 <b>AL</b>: Annual Leave penuh (kolom AL = 1)<br>'
-    '- 🌗 <b>1/2 AL</b>: Annual Leave setengah hari (kolom AL = 0.5)<br>'
-    '- 🏠 <b>WFA</b>: Work From Home penuh (kolom WFH = 1)<br>'
-    '- 🏡 <b>1/2 WFA</b>: Work From Home setengah hari (kolom WFH = 0.5)<br>'
-    '- 📍 <b>WFS</b>: Work From Offsite (att = "Normal (Offsite)" + Offsite(Hour) terisi)<br>'
-    '- 💊 <b>K</b>: sakit dengan surat<br>'
-    '- 🚫 <b>DW</b>: tidak hadir<br>'
-    '- 🏖️ <b>Off</b>: hari libur / tidak terjadwal<br>'
-    '- ❓ <b>None</b>: tidak memenuhi kondisi manapun — ditampilkan untuk transparansi data'
+    '- 📋 <b>S</b>: hadir tepat waktu (att TEPAT "Normal" / "Normal（Correction…）") → ekspor: nama shift<br>'
+    '- 🕐 <b>Late</b>: keterlambatan/pulang cepat 1-120 mnt → ekspor: <code>L</code> (kuning)<br>'
+    '- ⛔ <b>1/2 UL</b>: keterlambatan/pulang cepat &gt;120 mnt, atau UL kolom 0.5 → ekspor: <code>0,5UL</code><br>'
+    '- 📋 <b>UL</b>: Unpaid Leave penuh (kolom UL = 1) → ekspor: <code>UL</code> (merah tua)<br>'
+    '- 🌴 <b>AL</b>: Annual Leave penuh (kolom AL = 1) → ekspor: <code>AL</code> (hijau)<br>'
+    '- 🌗 <b>1/2 AL</b>: Annual Leave setengah hari (kolom AL = 0.5) → ekspor: <code>0,5AL</code><br>'
+    '- 🏠 <b>WFA</b>: Work From Home penuh (kolom WFH = 1) → ekspor: <code>WFA</code><br>'
+    '- 🏡 <b>1/2 WFA</b>: Work From Home setengah hari (kolom WFH = 0.5) → ekspor: <code>0,5WFA</code><br>'
+    '- 📍 <b>WFS</b>: Work From Offsite (att = "Normal (Offsite)" + Offsite(Hour) terisi) → ekspor: <code>WFS</code> (teal)<br>'
+    '- 💊 <b>K</b>: sakit dengan surat → ekspor: <code>K</code> (pink)<br>'
+    '- 🚫 <b>DW</b>: tidak hadir → ekspor: <code>DW</code> (oranye)<br>'
+    '- 🏖️ <b>Off</b>: hari libur / tidak terjadwal → ekspor: <code>OFF</code> (merah terang)<br>'
+    '- ❓ <b>None</b>: tidak memenuhi kondisi manapun — sel ekspor kosong'
     '</div>'
 
     # --- Pengecualian ---
@@ -1152,12 +1409,13 @@ _LOGIC_HTML = (
     '- 📍 WFS dicek <em>sebelum</em> skip-shift — jika att = "Normal (Offsite)", baris tetap diproses meski shift kosong<br>'
     '- ⏭️ Shift <code>Rest</code> / <code>Not scheduled</code> / <code>--</code> / kosong '
     '&rarr; dilewati engine klasifikasi. Jika att bukan "Normal (rest)" / "Normal (Offsite)" maka tampil sebagai <b>❓ None</b><br>'
-    '- ❓ Baris <b>None</b> <em>tidak</em> masuk perhitungan metric Shift, Off, maupun expander manapun — hanya tampil di Detail Lengkap per Hari<br>'
+    '- ❓ Baris <b>None</b> <em>tidak</em> masuk perhitungan metric Shift, Off, maupun expander manapun — hanya tampil di Detail Lengkap per Hari; sel ekspor <b>kosong</b><br>'
     '- 🔍 K diperiksa <em>sebelum</em> DW agar sakit-dengan-surat tidak tertimpa absensi<br>'
     '- 🛡️ Karyawan dengan K / DW / AL / UL / WFA / 1/2 WFA / WFS <b>tidak dikenai</b> cek keterlambatan<br>'
     '- 📊 Kolom AL, UL, WFH menggunakan <code>0.5</code> untuk setengah hari; mendukung koma desimal ("0,5")<br>'
     '- 🗄️ DB menggunakan separator <code>|</code> (pipe) untuk menghindari konflik dengan "1/2"<br>'
-    '- 🏢 Offsite(Hour) hanya perlu berisi nilai apapun &ne; "--"/kosong (bisa angka desimal jam)'
+    '- 🏢 Offsite(Hour) hanya perlu berisi nilai apapun &ne; "--"/kosong (bisa angka desimal jam)<br>'
+    '- 📋 Kolom KTP pada ekspor kalender <b>dikosongkan</b> — dapat diisi manual jika diperlukan'
     '</div>'
 
     '</div>'
@@ -1503,29 +1761,37 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
 
     # ── Download ──
     st.markdown("---")
-    dcol1, dcol2, dcol3 = st.columns([1, 1, 2])
 
     time_range = ""
     if file_bytes is not None:
         try:
-            buf = io.BytesIO(file_bytes)
-            raw = pd.read_excel(buf, sheet_name="General statistics and attendan",
-                                header=None, nrows=2)
-            tr_text = str(raw.iloc[1, 0])
-            m = re.search(r'Time Range[:\s]*([\d/\u2013\-\s]+)', tr_text)
-            time_range = m.group(1).strip() if m else ""
+            buf_tr = io.BytesIO(file_bytes)
+            raw_tr = pd.read_excel(buf_tr, sheet_name="General statistics and attendan",
+                                   header=None, nrows=2)
+            tr_text = str(raw_tr.iloc[1, 0])
+            m_tr = re.search(r'Time Range[:\s]*([\d/\u2013\-\s]+)', tr_text)
+            time_range = m_tr.group(1).strip() if m_tr else ""
         except Exception:
             time_range = ""
 
     fname = (
-        "Rekap_Absensi_" + time_range.replace(" ", "_").replace("\u2013", "sd") + ".xlsx"
-        if time_range else f"Rekap_Absensi_{current_periode or ''}.xlsx"
+        "Absensi_Kalender_" + time_range.replace(" ", "_").replace("\u2013", "sd") + ".xlsx"
+        if time_range else f"Absensi_Kalender_{current_periode or ''}.xlsx"
     )
 
+    # ── Siapkan data harian untuk kalender ekspor ──
+    with st.spinner("⚙️ Menyiapkan data kalender..."):
+        if file_bytes is not None:
+            df_daily_cal = get_all_daily_for_calendar(file_bytes)
+        else:
+            df_daily_cal = _get_all_daily_from_db(current_periode)
+
+    dcol1, dcol2, dcol3 = st.columns([1, 1, 2])
+
     with dcol1:
-        xlsx_bytes = to_excel_bytes(df_result, time_range or current_periode or "")
+        xlsx_bytes = to_excel_calendar_bytes(df_daily_cal, df_result, time_range or current_periode or "")
         st.download_button(
-            label="📥 Download Rekap Lengkap (.xlsx)",
+            label="📥 Download Kalender Harian (.xlsx)",
             data=xlsx_bytes,
             file_name=fname,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1534,7 +1800,9 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
 
     with dcol2:
         if len(df_show) < len(df_result):
-            xlsx_filtered = to_excel_bytes(df_show, time_range or current_periode or "")
+            visible_accs    = set(df_show["Account"].tolist())
+            df_daily_filt   = df_daily_cal[df_daily_cal["Account"].isin(visible_accs)] if not df_daily_cal.empty else df_daily_cal
+            xlsx_filtered   = to_excel_calendar_bytes(df_daily_filt, df_show, time_range or current_periode or "")
             st.download_button(
                 label="🔽 Download Hasil Filter (.xlsx)",
                 data=xlsx_filtered,

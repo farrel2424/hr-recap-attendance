@@ -174,3 +174,19 @@ def get_daily(account: str, periode: str):
         """, (account, periode)).fetchall()
     import pandas as pd
     return pd.DataFrame([dict(r) for r in rows])
+
+
+def get_all_daily(periode: str):
+    """Ambil semua data harian dari DB untuk seluruh karyawan dalam satu periode."""
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT
+                k.account, k.nama,
+                a.tanggal, a.shift, a.status_klasifikasi
+            FROM absensi_harian a
+            JOIN karyawan k ON k.id = a.karyawan_id
+            WHERE a.periode = ?
+            ORDER BY k.rules, k.nama, a.tanggal
+        """, (periode,)).fetchall()
+    import pandas as pd
+    return pd.DataFrame([dict(r) for r in rows])
