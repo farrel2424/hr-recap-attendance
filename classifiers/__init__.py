@@ -104,6 +104,7 @@ def classify(
     duration_early=None,  # Kolom "Duration of early departure(分钟)"
     wfh_count=None,       # Kolom "WFH-WorkFromHome-家办公(Day(s))"
     offsite_hour=None,    # Kolom "Offsite(Hour)"
+    missed_punch_count=None, # Kolom "Number of missed punches(Count)"
 ) -> list[str] | None:
     """
     Klasifikasi satu baris absensi.
@@ -188,6 +189,14 @@ def classify(
     if late_out:
         return late_out
 
+    # ── 10.5. Missed punch = 1 → 1/2 UL ────────────────────────────────────
+    #   Jika jumlah punch yang terlewat tepat 1, karyawan dianggap tidak
+    #   melengkapi presensi sehingga dikenai setengah hari Unpaid Leave.
+    #   Hanya aktif bila langkah 9-10 tidak menangkap keterlambatan/early dep.
+    _mp_val = parse_day_value(missed_punch_count)
+    if _mp_val is not None and abs(_mp_val - 1.0) < 0.01:
+        return ["1/2 UL"]
+
     # ── 11. S (Shift) — att_result TEPAT "Normal" atau "Normal（Correction…）" ─
     if att_str in S_ATT_RESULTS:
         return _classify_normal()   # returns ["S"]
@@ -210,6 +219,7 @@ def classify_str(
     duration_early=None,
     wfh_count=None,
     offsite_hour=None,
+    missed_punch_count=None,
 ) -> str | None:
     """
     Versi string dari classify() — untuk disimpan ke DB (dipisah '|').
@@ -227,7 +237,7 @@ def classify_str(
         duration_late=duration_late,
         duration_early=duration_early,
         wfh_count=wfh_count,
-        offsite_hour=offsite_hour,
+        missed_punch_count=missed_punch_count,
     )
     if result is None:
         return None

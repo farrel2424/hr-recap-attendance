@@ -155,7 +155,7 @@ def _find_duration_late_col(df) -> str | None: return _find_col(df, "Duration of
 def _find_duration_early_col(df)-> str | None: return _find_col(df, "Duration of early departure")
 def _find_wfh_col(df)           -> str | None: return _find_col(df, "WFH-WorkFromHome")
 def _find_offsite_col(df)       -> str | None: return _find_col(df, "Offsite(Hour)")
-
+def _find_missed_punch_col(df)  -> str | None: return _find_col(df, "Number of missed punches")
 
 _STATUS_ICON = {
     "S"      : "📋",
@@ -251,6 +251,7 @@ def get_employee_daily(file_bytes, account):
     dur_early_col   = _find_duration_early_col(df_emp)
     wfh_col         = _find_wfh_col(df_emp)
     offsite_col     = _find_offsite_col(df_emp)
+    missed_punch_col  = _find_missed_punch_col(df_emp)
 
     def _parse_hours(val):
         if val is None:
@@ -281,6 +282,7 @@ def get_employee_daily(file_bytes, account):
             duration_early=r.get(dur_early_col) if dur_early_col else None,
             wfh_count=r.get(wfh_col)            if wfh_col       else None,
             offsite_hour=r.get(offsite_col)     if offsite_col   else None,
+            missed_punch_count=r.get(missed_punch_col) if missed_punch_col else None,
         )
 
         if _klas_raw is None:
@@ -381,6 +383,7 @@ def get_all_daily_for_calendar(file_bytes):
     dur_early_col = _find_duration_early_col(df_all)
     wfh_col       = _find_wfh_col(df_all)
     offsite_col   = _find_offsite_col(df_all)
+    missed_punch_col  = _find_missed_punch_col(df_all)
 
     df_all = df_all[df_all["Account"].notna() & df_all["Rules"].notna()]
     df_all = df_all[~df_all["Account"].astype(str).str.strip().isin(["", "--"])]
@@ -409,6 +412,7 @@ def get_all_daily_for_calendar(file_bytes):
             duration_early=r.get(dur_early_col) if dur_early_col else None,
             wfh_count=r.get(wfh_col)            if wfh_col       else None,
             offsite_hour=r.get(offsite_col)     if offsite_col   else None,
+            missed_punch_count=r.get(missed_punch_col) if missed_punch_col else None,
         )
         classification = klas_raw[0] if klas_raw else None
 
@@ -740,6 +744,7 @@ def process_file(file_bytes):
             duration_early=r.get(dur_early_col) if dur_early_col else None,
             wfh_count=r.get(wfh_col)            if wfh_col       else None,
             offsite_hour=r.get(offsite_col)     if offsite_col   else None,
+            missed_punch_col  = _find_missed_punch_col(df)
         ),
         axis=1,
     )
@@ -1137,6 +1142,11 @@ _LOGIC_HTML = (
     '<td style="padding:0.4rem 0.7rem;"><code>Number of absences(Count)</code></td>'
     '<td style="padding:0.4rem 0.7rem;">&ne; 0 / "--"</td>'
     '</tr>'
+    '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;">⛔ 1/2 UL (missed punch)</td>'
+    '<td style="padding:0.4rem 0.7rem;"><code>Number of missed punches(Count)</code></td>'
+    '<td style="padding:0.4rem 0.7rem;">= <b>1</b> (tepat satu punch terlewat)</td>'
+    '</tr>'
     '</table>'
 
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
@@ -1217,6 +1227,14 @@ _LOGIC_HTML = (
     '</tr>'
 
     '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">⛔ 1/2 UL (missed punch)</td>'
+    '<td style="padding:0.4rem 0.7rem;">'
+    'Kolom <code>Number of missed punches(Count)</code> tepat bernilai <b>1</b> — '
+    'satu punch (masuk atau keluar) tidak terekam. Dicek setelah cek durasi '
+    'agar tidak tumpang tindih dengan Late/½UL berbasis durasi.</td>'
+    '</tr>'
+
+    '<tr>'
     '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">📋 S (Shift)</td>'
     '<td style="padding:0.4rem 0.7rem;">Att Results bernilai <b>TEPAT</b> <code>"Normal"</code> '
     'atau <code>"Normal（Correction of missed punch）"</code>.</td>'
@@ -1252,6 +1270,7 @@ _LOGIC_HTML = (
     '10. 🕐 Kolom Duration of early departure:<br>'
     '&nbsp;&nbsp;&nbsp;+-- 1-120 mnt &rarr; <b>Late</b> &mdash; selesai<br>'
     '&nbsp;&nbsp;&nbsp;+-- &gt;120 mnt &rarr; <b>1/2 UL</b> &mdash; selesai<br>'
+    '10.5 💼 Kolom Number of missed punches(Count) = <b>1</b> &rarr; <b>1/2 UL</b> &mdash; selesai<br>'
     '11. 📋 Att TEPAT "Normal" atau "Normal（Correction of missed punch）" &rarr; <b>S</b><br>'
     '12. ❓ Selain itu &rarr; <b>None</b> (sel ekspor kosong, tanpa warna)'
     '</div>'
@@ -1414,6 +1433,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             _dur_early_col = _find_duration_early_col(df_raw)
             _wfh_col       = _find_wfh_col(df_raw)
             _offsite_col   = _find_offsite_col(df_raw)
+            _missed_punch_col  = _find_missed_punch_col(df_raw)
 
             df_raw["_tipe_shift"] = df_raw["Shift"].apply(classify_shift_type)
             df_raw["_status_klasifikasi"] = df_raw.apply(
