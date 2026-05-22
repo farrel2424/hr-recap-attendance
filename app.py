@@ -726,6 +726,7 @@ def process_file(file_bytes):
     dur_early_col = _find_duration_early_col(df)
     wfh_col       = _find_wfh_col(df)
     offsite_col   = _find_offsite_col(df)
+    missed_punch_col = _find_missed_punch_col(df)
 
     df = df.copy()
     df = df[df["Account"].notna() & df["Rules"].notna()]
@@ -744,7 +745,7 @@ def process_file(file_bytes):
             duration_early=r.get(dur_early_col) if dur_early_col else None,
             wfh_count=r.get(wfh_col)            if wfh_col       else None,
             offsite_hour=r.get(offsite_col)     if offsite_col   else None,
-            missed_punch_col  = _find_missed_punch_col(df)
+            missed_punch_count=r.get(missed_punch_col) if missed_punch_col else None,
         ),
         axis=1,
     )
@@ -1449,6 +1450,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                     duration_early=r.get(_dur_early_col)   if _dur_early_col else None,
                     wfh_count=r.get(_wfh_col)              if _wfh_col       else None,
                     offsite_hour=r.get(_offsite_col)       if _offsite_col   else None,
+                    missed_punch_count=r.get(_missed_punch_col) if _missed_punch_col else None,
                 ), axis=1,
             )
             save_periode(df_raw, _periode)
