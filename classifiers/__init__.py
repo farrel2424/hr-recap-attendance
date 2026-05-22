@@ -34,13 +34,10 @@ Flow (Urutan Prioritas):
        ├─ nilai = 0.5 → 1/2 WFA                                ["1/2 WFA"]
        └─ nilai = 1   → WFA                                    ["WFA"]
 
-  9. Kolom "Duration of late arrival(分钟)" (keterlambatan masuk)
-       ├─ 1–120 menit → Late                                   ["Late"]    (standalone)
-       └─  > 120 menit → 1/2 UL                               ["1/2 UL"]  (standalone)
-
-  10. Kolom "Duration of early departure(分钟)" (pulang lebih awal)
-       ├─ 1–120 menit → Late                                   ["Late"]    (standalone)
-       └─  > 120 menit → 1/2 UL                               ["1/2 UL"]  (standalone)
+  9 & 10. Kolom "Duration of late arrival(分钟)" DAN "Duration of early departure(分钟)"
+       Keduanya dievaluasi, diambil yang paling berat (severity: 1/2 UL > Late):
+       ├─ Salah satu > 120 menit → 1/2 UL                     ["1/2 UL"]  (standalone)
+       └─ Keduanya 1–120 menit   → Late                        ["Late"]    (standalone)
 
   11. att_result TEPAT "Normal" atau "Normal（Correction of missed punch）"
         → S (Shift)                                            ["S"]
@@ -177,17 +174,22 @@ def classify(
     if wfa_result:
         return wfa_result
 
-    # ── 9. Keterlambatan masuk — Duration of late arrival ───────────────────
-    #   1–120 mnt → Late   |   > 120 mnt → 1/2 UL
-    late_in = _classify_late_in(duration_late)
-    if late_in:
-        return late_in
-
-    # ── 10. Pulang lebih awal — Duration of early departure ─────────────────
-    #   1–120 mnt → Late   |   > 120 mnt → 1/2 UL
+    # ── 9 & 10. Keterlambatan masuk + pulang lebih awal ─────────────────────
+    #   Kedua kolom dievaluasi terlebih dahulu, lalu diambil yang paling berat.
+    #   Severity: 1/2 UL  >  Late
+    #
+    #   Contoh:
+    #     late_in=Late  + late_out=1/2 UL  → 1/2 UL  (bukan Late)
+    #     late_in=1/2 UL + late_out=Late   → 1/2 UL  (bukan Late)
+    #     late_in=Late  + late_out=Late    → Late
+    #     late_in=None  + late_out=1/2 UL  → 1/2 UL
+    late_in  = _classify_late_in(duration_late)
     late_out = _classify_late_out(duration_early)
-    if late_out:
-        return late_out
+
+    if late_in or late_out:
+        if (late_in == ["1/2 UL"]) or (late_out == ["1/2 UL"]):
+            return ["1/2 UL"]
+        return ["Late"]
 
     # ── 10.5. Missed punch = 1 → 1/2 UL ────────────────────────────────────
     #   Jika jumlah punch yang terlewat tepat 1, karyawan dianggap tidak
