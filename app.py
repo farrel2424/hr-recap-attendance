@@ -9,7 +9,7 @@ import datetime as _dt
 import pandas as pd
 import streamlit as st
 from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, Border, Side
+from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 from database.db import init_db, save_periode, get_periodes, get_rekap, get_daily, get_all_daily
 from classifiers import (
@@ -184,32 +184,46 @@ def _fmt_klasifikasi(klas_raw) -> str:
 
 
 # ──────────────────────────────────────────────────────────────
-# Helper: Ekspor Kalender — Label Sel
-# Semua status S → "S"  (tidak membedakan S1, S2, dll.)
+# Helper: Ekspor Kalender — Label & Warna Sel
 # ──────────────────────────────────────────────────────────────
 
+# Pemetaan label teks untuk tiap klasifikasi di ekspor kalender
+_LABEL_MAP = {
+    "Off":     "OFF",
+    "AL":      "AL",
+    "1/2 AL":  "0,5AL",
+    "WFA":     "WFA",
+    "1/2 WFA": "0,5WFA",
+    "WFS":     "WFS",
+    "K":       "K",
+    "DW":      "DW",
+    "UL":      "UL",
+    "1/2 UL":  "0,5UL",
+    "Late":    "L",
+    "S":       "S",
+}
+
+# Pemetaan background color (hex tanpa '#') untuk tiap label ekspor
+# Palet warna pastel — mudah dibaca, konsisten dengan tema aplikasi
+_CELL_FILL: dict[str, PatternFill] = {
+    "S":      PatternFill("solid", fgColor="D9EAD3"),  # hijau muda  — hadir normal
+    "OFF":    PatternFill("solid", fgColor="CFE2F3"),  # biru muda   — Off / libur
+    "AL":     PatternFill("solid", fgColor="D9D2E9"),  # ungu muda   — Annual Leave penuh
+    "0,5AL":  PatternFill("solid", fgColor="EAD1DC"),  # pink        — Half Annual Leave
+    "WFA":    PatternFill("solid", fgColor="D0E4F7"),  # biru langit — WFA penuh
+    "0,5WFA": PatternFill("solid", fgColor="C9DAF8"),  # biru medium — Half WFA
+    "WFS":    PatternFill("solid", fgColor="B4C7E7"),  # biru indigo — Work From Offsite
+    "UL":     PatternFill("solid", fgColor="B7E1CD"),  # hijau sedang— Unpaid Leave penuh
+    "0,5UL":  PatternFill("solid", fgColor="FCE5CD"),  # oranye muda — Half UL / telat >120 mnt
+    "L":      PatternFill("solid", fgColor="FFF2CC"),  # kuning      — Late / pulang cepat
+    "K":      PatternFill("solid", fgColor="F4CCCC"),  # merah muda  — Sakit dengan surat
+    "DW":     PatternFill("solid", fgColor="EA9999"),  # merah       — Absence / tidak hadir
+}
+
+
 def _get_cell_display(shift_text: str, classification) -> str:
-    """
-    Tentukan nilai tampil untuk sel kalender berdasarkan klasifikasi.
-    - Status S (hadir normal, semua tipe shift) → "S"
-    - Status khusus → kode label singkat
-    - None / tidak dikenal → string kosong
-    """
-    _MAP = {
-        "Off":    "OFF",
-        "AL":     "AL",
-        "1/2 AL": "0,5AL",
-        "WFA":    "WFA",
-        "1/2 WFA":"0,5WFA",
-        "WFS":    "WFS",
-        "K":      "K",
-        "DW":     "DW",
-        "UL":     "UL",
-        "1/2 UL": "0,5UL",
-        "Late":   "L",
-        "S":      "S",
-    }
-    return _MAP.get(classification, "")
+    """Tentukan nilai label teks untuk sel kalender berdasarkan klasifikasi."""
+    return _LABEL_MAP.get(classification, "")
 
 
 def parse_date_from_time(val):
@@ -783,8 +797,7 @@ def process_file(file_bytes):
 #   Baris 1 : NO | KTP | NAME | tgl-pertama (format 'd') | =D1+1 | ...
 #   Baris 2 : (kosong x3) | =D1 (format 'ddd') | =E1 | ...
 #   Baris 3+: data karyawan
-# Semua status S → label "S"  (S1, S2, dll. tidak dibedakan)
-# Tidak ada background color — sel putih bersih
+# Setiap sel diberi background color sesuai klasifikasi (palet pastel).
 # ──────────────────────────────────────────────────────────────
 
 def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
@@ -893,7 +906,11 @@ def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
             label = _get_cell_display(shift_t, klas)
 
             c.value = label
-            c.font  = Font(name="Arial", size=9)
+            c.font  = Font(name="Arial", size=9, bold=(label in ("DW", "K")))
+
+            # ── Background color sesuai klasifikasi ──────────────────
+            if label and label in _CELL_FILL:
+                c.fill = _CELL_FILL[label]
 
     # ── Lebar kolom ────────────────────────────────────────────────────
     ws.column_dimensions["A"].width = 13.0
@@ -976,41 +993,59 @@ _LOGIC_HTML = (
     '<b>Isi sel harian:</b><br>'
     '&nbsp;&nbsp;• Status S (hadir normal, semua tipe shift) → <b>"S"</b><br>'
     '&nbsp;&nbsp;• Status khusus → kode label (tabel di bawah)<br>'
-    '&nbsp;&nbsp;• Tidak ada data / None → kosong<br><br>'
+    '&nbsp;&nbsp;• Tidak ada data / None → kosong (tanpa warna)<br><br>'
     '<b>Styling:</b> Font Arial, semua sel center-aligned, thin border hitam. '
-    'Tidak ada background color. Lebar kolom: A=13, B=25.7, C=28.1, kolom tanggal=13.'
+    'Setiap klasifikasi diberi <b>background color pastel</b> (lihat legenda warna di bawah). '
+    'Lebar kolom: A=13, B=25.7, C=28.1, kolom tanggal=13.'
     '</div>'
+
+    '<div style="font-weight:700;color:#0f172a;margin-bottom:0.6rem;font-size:0.82rem;'
+    'text-transform:uppercase;letter-spacing:0.06em;">🎨 Legenda Warna Sel Ekspor</div>'
 
     '<table style="width:100%;border-collapse:collapse;margin-bottom:1.2rem;">'
     '<tr style="background:#f1f5f9;">'
-    '<td style="padding:0.4rem 0.7rem;font-weight:600;">Label Sel</td>'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;width:80px;">Label</td>'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;width:120px;">Warna Sel</td>'
     '<td style="padding:0.4rem 0.7rem;font-weight:600;">Status Klasifikasi</td>'
     '</tr>'
     '<tr><td style="padding:0.3rem 0.7rem;"><b>S</b></td>'
-    '<td style="padding:0.3rem 0.7rem;">S — Hadir normal (semua tipe: S1, S2, Night, dll.)</td></tr>'
-    '<tr style="background:#f1f5f9;"><td style="padding:0.3rem 0.7rem;"><b>OFF</b></td>'
-    '<td style="padding:0.3rem 0.7rem;">Off — Hari libur / not scheduled</td></tr>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#D9EAD3;padding:2px 10px;border-radius:3px;">▮ #D9EAD3</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Hadir normal — hijau muda</td></tr>'
+    '<tr style="background:#f8fafc;"><td style="padding:0.3rem 0.7rem;"><b>OFF</b></td>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#CFE2F3;padding:2px 10px;border-radius:3px;">▮ #CFE2F3</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Off / libur — biru muda</td></tr>'
     '<tr><td style="padding:0.3rem 0.7rem;"><b>AL</b></td>'
-    '<td style="padding:0.3rem 0.7rem;">AL — Annual Leave penuh</td></tr>'
-    '<tr style="background:#f1f5f9;"><td style="padding:0.3rem 0.7rem;"><b>0,5AL</b></td>'
-    '<td style="padding:0.3rem 0.7rem;">1/2 AL — Annual Leave ½ hari</td></tr>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#D9D2E9;padding:2px 10px;border-radius:3px;">▮ #D9D2E9</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Annual Leave penuh — ungu muda</td></tr>'
+    '<tr style="background:#f8fafc;"><td style="padding:0.3rem 0.7rem;"><b>0,5AL</b></td>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#EAD1DC;padding:2px 10px;border-radius:3px;">▮ #EAD1DC</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Annual Leave ½ hari — pink</td></tr>'
     '<tr><td style="padding:0.3rem 0.7rem;"><b>WFA</b></td>'
-    '<td style="padding:0.3rem 0.7rem;">WFA — Work From Home penuh</td></tr>'
-    '<tr style="background:#f1f5f9;"><td style="padding:0.3rem 0.7rem;"><b>0,5WFA</b></td>'
-    '<td style="padding:0.3rem 0.7rem;">1/2 WFA — Work From Home ½ hari</td></tr>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#D0E4F7;padding:2px 10px;border-radius:3px;">▮ #D0E4F7</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Work From Home penuh — biru langit</td></tr>'
+    '<tr style="background:#f8fafc;"><td style="padding:0.3rem 0.7rem;"><b>0,5WFA</b></td>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#C9DAF8;padding:2px 10px;border-radius:3px;">▮ #C9DAF8</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Work From Home ½ hari — biru medium</td></tr>'
     '<tr><td style="padding:0.3rem 0.7rem;"><b>WFS</b></td>'
-    '<td style="padding:0.3rem 0.7rem;">WFS — Work From Offsite</td></tr>'
-    '<tr style="background:#f1f5f9;"><td style="padding:0.3rem 0.7rem;"><b>UL</b></td>'
-    '<td style="padding:0.3rem 0.7rem;">UL — Unpaid Leave penuh</td></tr>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#B4C7E7;padding:2px 10px;border-radius:3px;">▮ #B4C7E7</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Work From Offsite — biru indigo</td></tr>'
+    '<tr style="background:#f8fafc;"><td style="padding:0.3rem 0.7rem;"><b>UL</b></td>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#B7E1CD;padding:2px 10px;border-radius:3px;">▮ #B7E1CD</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Unpaid Leave penuh — hijau sedang</td></tr>'
     '<tr><td style="padding:0.3rem 0.7rem;"><b>0,5UL</b></td>'
-    '<td style="padding:0.3rem 0.7rem;">1/2 UL — Unpaid Leave ½ hari / terlambat &gt;120 mnt</td></tr>'
-    '<tr style="background:#f1f5f9;"><td style="padding:0.3rem 0.7rem;"><b>L</b></td>'
-    '<td style="padding:0.3rem 0.7rem;">Late — Terlambat / pulang cepat 1–120 mnt</td></tr>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#FCE5CD;padding:2px 10px;border-radius:3px;">▮ #FCE5CD</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Unpaid Leave ½ hari / terlambat &gt;120 mnt — oranye muda</td></tr>'
+    '<tr style="background:#f8fafc;"><td style="padding:0.3rem 0.7rem;"><b>L</b></td>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#FFF2CC;padding:2px 10px;border-radius:3px;">▮ #FFF2CC</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Late / pulang cepat 1–120 mnt — kuning</td></tr>'
     '<tr><td style="padding:0.3rem 0.7rem;"><b>K</b></td>'
-    '<td style="padding:0.3rem 0.7rem;">K — Sakit dengan Surat</td></tr>'
-    '<tr style="background:#f1f5f9;"><td style="padding:0.3rem 0.7rem;"><b>DW</b></td>'
-    '<td style="padding:0.3rem 0.7rem;">DW — Tidak Hadir (Absence)</td></tr>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#F4CCCC;padding:2px 10px;border-radius:3px;">▮ #F4CCCC</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Sakit dengan surat — merah muda</td></tr>'
+    '<tr style="background:#f8fafc;"><td style="padding:0.3rem 0.7rem;"><b>DW</b></td>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#EA9999;padding:2px 10px;border-radius:3px;">▮ #EA9999</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Tidak hadir / Absence — merah</td></tr>'
     '<tr><td style="padding:0.3rem 0.7rem;"><i>(kosong)</i></td>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#FFFFFF;border:1px solid #e2e8f0;padding:2px 10px;border-radius:3px;">▮ putih</span></td>'
     '<td style="padding:0.3rem 0.7rem;">None — tidak memenuhi kondisi manapun</td></tr>'
     '</table>'
 
@@ -1189,7 +1224,7 @@ _LOGIC_HTML = (
 
     '<tr>'
     '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">❓ None</td>'
-    '<td style="padding:0.4rem 0.7rem;">Tidak memenuhi satu pun kondisi di atas — sel ekspor <b>kosong</b>.</td>'
+    '<td style="padding:0.4rem 0.7rem;">Tidak memenuhi satu pun kondisi di atas — sel ekspor <b>kosong</b> (tanpa warna).</td>'
     '</tr>'
 
     '</table>'
@@ -1218,7 +1253,7 @@ _LOGIC_HTML = (
     '&nbsp;&nbsp;&nbsp;+-- 1-120 mnt &rarr; <b>Late</b> &mdash; selesai<br>'
     '&nbsp;&nbsp;&nbsp;+-- &gt;120 mnt &rarr; <b>1/2 UL</b> &mdash; selesai<br>'
     '11. 📋 Att TEPAT "Normal" atau "Normal（Correction of missed punch）" &rarr; <b>S</b><br>'
-    '12. ❓ Selain itu &rarr; <b>None</b> (sel ekspor kosong)'
+    '12. ❓ Selain itu &rarr; <b>None</b> (sel ekspor kosong, tanpa warna)'
     '</div>'
 
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
@@ -1227,25 +1262,25 @@ _LOGIC_HTML = (
     '<div style="background:#fef9ec;border-radius:8px;padding:0.7rem 1rem;margin-bottom:1.2rem;'
     'font-size:0.82rem;border-left:3px solid #eab308;">'
 
-    '<b>1. 📊 Format Ekspor Kalender Diperbarui (sesuai sampleexpor.xlsx):</b><br>'
+    '<b>1. 🎨 Background Color Sel Ekspor (Update Terbaru):</b><br>'
+    '- Setiap sel data di kalender harian kini diberi <b>background color pastel</b> sesuai klasifikasi<br>'
+    '- Warna dipilih dari palet Google Sheets yang familiar dan mudah dibedakan<br>'
+    '- Sel <b>None</b> (tidak ada data) tetap putih/tanpa warna<br>'
+    '- Sel <b>DW</b> dan <b>K</b> menggunakan font bold untuk penekanan visual<br>'
+    '- Lihat tabel legenda warna di atas untuk daftar lengkap mapping warna<br><br>'
+
+    '<b>2. 📊 Format Ekspor Kalender Diperbarui (sesuai sampleexpor.xlsx):</b><br>'
     '- <b>Baris 1:</b> NO | KTP | NAME | tanggal pertama (datetime, format <code>d</code>) | <code>=D1+1</code> | <code>=E1+1</code> | …<br>'
     '- <b>Baris 2:</b> (kosong x3) | <code>=D1</code> (format <code>ddd</code>) | <code>=E1</code> | … (singkatan hari otomatis)<br>'
     '- <b>Data mulai baris 3</b> (sebelumnya baris 4 karena ada judul di baris 1)<br>'
     '- <b>Tidak ada baris judul</b> — judul "Rekap Absensi Harian" dihapus<br>'
-    '- <b>Tidak ada background color</b> — semua sel putih bersih<br>'
     '- Kolom KTP dikosongkan (diisi manual jika diperlukan)<br><br>'
 
-    '<b>2. ✏️ Label Sel S Diubah:</b><br>'
+    '<b>3. ✏️ Label Sel S Diubah:</b><br>'
     '- <b>Sebelumnya:</b> nama pendek shift (<code>S1</code>, <code>S2</code>, <code>Night</code>, dll.)<br>'
     '- <b>Sekarang:</b> semua tipe shift hadir normal → <b><code>S</code></b> (seragam)<br><br>'
 
-    '<b>3. ✨ WFS (Work From Offsite) — tidak berubah:</b><br>'
-    '- Dipicu att = "Normal (Offsite)" DAN Offsite(Hour) terisi<br><br>'
-
-    '<b>4. 🔄 WFA / 1/2 WFA — tidak berubah:</b><br>'
-    '- Kolom WFH-WorkFromHome = 1 → WFA | = 0.5 → 1/2 WFA<br><br>'
-
-    '<b>5. AL / 1/2 AL, UL / 1/2 UL, DW, K, Late / 1/2 UL dari durasi — tidak berubah.</b>'
+    '<b>4. WFS, WFA/1/2 WFA, AL/1/2 AL, UL/1/2 UL, DW, K, Late/1/2 UL dari durasi — tidak berubah.</b>'
     '</div>'
 
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
@@ -1254,19 +1289,19 @@ _LOGIC_HTML = (
     '<div style="background:#eff6ff;border-radius:8px;padding:0.6rem 1rem;margin-bottom:1.2rem;'
     'font-size:0.82rem;border-left:3px solid #3b82f6;">'
     'Setiap baris absensi menghasilkan tepat <b>satu status</b>:<br>'
-    '- 📋 <b>S</b>: hadir tepat waktu → ekspor: <code>S</code><br>'
-    '- 🕐 <b>Late</b>: keterlambatan/pulang cepat 1-120 mnt → ekspor: <code>L</code><br>'
-    '- ⛔ <b>1/2 UL</b>: keterlambatan/pulang cepat &gt;120 mnt, atau UL kolom 0.5 → ekspor: <code>0,5UL</code><br>'
-    '- 📋 <b>UL</b>: Unpaid Leave penuh (kolom UL = 1) → ekspor: <code>UL</code><br>'
-    '- 🌴 <b>AL</b>: Annual Leave penuh (kolom AL = 1) → ekspor: <code>AL</code><br>'
-    '- 🌗 <b>1/2 AL</b>: Annual Leave setengah hari (kolom AL = 0.5) → ekspor: <code>0,5AL</code><br>'
-    '- 🏠 <b>WFA</b>: Work From Home penuh (kolom WFH = 1) → ekspor: <code>WFA</code><br>'
-    '- 🏡 <b>1/2 WFA</b>: Work From Home setengah hari (kolom WFH = 0.5) → ekspor: <code>0,5WFA</code><br>'
-    '- 📍 <b>WFS</b>: Work From Offsite → ekspor: <code>WFS</code><br>'
-    '- 💊 <b>K</b>: sakit dengan surat → ekspor: <code>K</code><br>'
-    '- 🚫 <b>DW</b>: tidak hadir → ekspor: <code>DW</code><br>'
-    '- 🏖️ <b>Off</b>: hari libur / tidak terjadwal → ekspor: <code>OFF</code><br>'
-    '- ❓ <b>None</b>: tidak memenuhi kondisi manapun — sel ekspor <b>kosong</b>'
+    '- 📋 <b>S</b>: hadir tepat waktu → ekspor: <code style="background:#D9EAD3;padding:1px 6px;border-radius:3px;">S</code><br>'
+    '- 🕐 <b>Late</b>: keterlambatan/pulang cepat 1-120 mnt → ekspor: <code style="background:#FFF2CC;padding:1px 6px;border-radius:3px;">L</code><br>'
+    '- ⛔ <b>1/2 UL</b>: keterlambatan/pulang cepat &gt;120 mnt, atau UL kolom 0.5 → ekspor: <code style="background:#FCE5CD;padding:1px 6px;border-radius:3px;">0,5UL</code><br>'
+    '- 📋 <b>UL</b>: Unpaid Leave penuh (kolom UL = 1) → ekspor: <code style="background:#B7E1CD;padding:1px 6px;border-radius:3px;">UL</code><br>'
+    '- 🌴 <b>AL</b>: Annual Leave penuh (kolom AL = 1) → ekspor: <code style="background:#D9D2E9;padding:1px 6px;border-radius:3px;">AL</code><br>'
+    '- 🌗 <b>1/2 AL</b>: Annual Leave setengah hari (kolom AL = 0.5) → ekspor: <code style="background:#EAD1DC;padding:1px 6px;border-radius:3px;">0,5AL</code><br>'
+    '- 🏠 <b>WFA</b>: Work From Home penuh (kolom WFH = 1) → ekspor: <code style="background:#D0E4F7;padding:1px 6px;border-radius:3px;">WFA</code><br>'
+    '- 🏡 <b>1/2 WFA</b>: Work From Home setengah hari (kolom WFH = 0.5) → ekspor: <code style="background:#C9DAF8;padding:1px 6px;border-radius:3px;">0,5WFA</code><br>'
+    '- 📍 <b>WFS</b>: Work From Offsite → ekspor: <code style="background:#B4C7E7;padding:1px 6px;border-radius:3px;">WFS</code><br>'
+    '- 💊 <b>K</b>: sakit dengan surat → ekspor: <code style="background:#F4CCCC;padding:1px 6px;border-radius:3px;">K</code><br>'
+    '- 🚫 <b>DW</b>: tidak hadir → ekspor: <code style="background:#EA9999;padding:1px 6px;border-radius:3px;">DW</code><br>'
+    '- 🏖️ <b>Off</b>: hari libur / tidak terjadwal → ekspor: <code style="background:#CFE2F3;padding:1px 6px;border-radius:3px;">OFF</code><br>'
+    '- ❓ <b>None</b>: tidak memenuhi kondisi manapun — sel ekspor <b>kosong</b> (putih)'
     '</div>'
 
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
@@ -1274,10 +1309,11 @@ _LOGIC_HTML = (
 
     '<div style="background:#fef9ec;border-radius:8px;padding:0.6rem 1rem;'
     'font-size:0.82rem;border-left:3px solid #f59e0b;">'
+    '- 🎨 Background color hanya diterapkan pada sel data (baris 3+), bukan header<br>'
     '- 📍 WFS dicek <em>sebelum</em> skip-shift — jika att = "Normal (Offsite)", baris tetap diproses meski shift kosong<br>'
     '- ⏭️ Shift <code>Rest</code> / <code>Not scheduled</code> / <code>--</code> / kosong '
     '&rarr; dilewati engine klasifikasi. Jika att bukan "Normal (rest)" / "Normal (Offsite)" maka tampil sebagai <b>❓ None</b><br>'
-    '- ❓ Baris <b>None</b> <em>tidak</em> masuk perhitungan metric — hanya tampil di Detail Lengkap per Hari; sel ekspor <b>kosong</b><br>'
+    '- ❓ Baris <b>None</b> <em>tidak</em> masuk perhitungan metric — sel ekspor <b>kosong tanpa warna</b><br>'
     '- 🔍 K diperiksa <em>sebelum</em> DW agar sakit-dengan-surat tidak tertimpa absensi<br>'
     '- 🛡️ Karyawan dengan K / DW / AL / UL / WFA / 1/2 WFA / WFS <b>tidak dikenai</b> cek keterlambatan<br>'
     '- 📊 Kolom AL, UL, WFH menggunakan <code>0.5</code> untuk setengah hari; mendukung koma desimal ("0,5")<br>'
