@@ -11,7 +11,11 @@ import streamlit as st
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
-from database.db import init_db, save_periode, get_periodes, get_rekap, get_daily, get_all_daily
+from database.db import (
+    init_db, save_periode, get_periodes, get_rekap,
+    get_daily, get_all_daily,
+    update_karyawan, update_absensi_row,
+)
 from classifiers import (
     classify,
     classify_str,
@@ -372,14 +376,16 @@ def get_employee_daily_from_db(account, periode):
         status_ab  = str(r.get("status_absensi") or "").strip() or "--"
 
         rows.append({
-            "Tanggal"        : r["tanggal"],
-            "Shift"          : str(r.get("shift") or "").strip() or "--",
-            "Jam Masuk"      : jam_masuk,
-            "Jam Keluar"     : jam_keluar,
-            "Status"         : status_ab,
-            "Jam Kerja"      : float(r.get("jam_kerja") or 0),
-            "Klasifikasi"    : klas_disp,
-            "Klasifikasi_raw": klas_raw,
+            "Tanggal"         : r["tanggal"],
+            "Shift"           : str(r.get("shift") or "").strip() or "--",
+            "Jam Masuk"       : jam_masuk,
+            "Jam Keluar"      : jam_keluar,
+            "Status"          : status_ab,
+            "Jam Kerja"       : float(r.get("jam_kerja") or 0),
+            "Klasifikasi"     : klas_disp,
+            "Klasifikasi_raw" : klas_raw,
+            "Catatan"         : str(r.get("catatan") or "").strip(),
+            "Manual_Override" : bool(r.get("is_manual_override") or 0),
         })
 
     if not rows:
@@ -775,13 +781,153 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
     with st.expander(f"📑 Detail Lengkap per Hari  —  {len(detail_df)} hari tercatat", expanded=False):
         dd = detail_df.copy()
         dd["Jam Kerja"] = dd["Jam Kerja"].apply(lambda x: f"{x:.1f} jam" if x > 0 else "-")
+
+        _detail_cols = ["No.", "Tanggal", "Shift", "Jam Masuk", "Jam Keluar",
+                        "Status", "Klasifikasi", "Jam Kerja"]
+        _detail_col_cfg: dict = {
+            "Status": st.column_config.TextColumn("Status Absensi", width="large"),
+        }
+        if "Manual_Override" in dd.columns:
+            dd["✏️"] = dd["Manual_Override"].apply(lambda x: "✏️" if x else "")
+            _detail_cols.append("✏️")
+            _detail_col_cfg["✏️"] = st.column_config.TextColumn("Override", width="small")
+        if "Catatan" in dd.columns:
+            _detail_cols.append("Catatan")
+            _detail_col_cfg["Catatan"] = st.column_config.TextColumn("📝 Catatan", width="large")
+
         st.dataframe(
-            dd[["No.", "Tanggal", "Shift", "Jam Masuk", "Jam Keluar", "Status", "Klasifikasi", "Jam Kerja"]],
+            dd[_detail_cols],
             width="stretch",
             height=420,
             hide_index=True,
-            column_config={"Status": st.column_config.TextColumn("Status Absensi", width="large")},
+            column_config=_detail_col_cfg,
         )
+
+    # ── Edit Data Karyawan & Absensi Harian ──────────────────────────────
+    if periode is not None:
+        st.markdown(
+            "<hr style='border-color:#e2e8f0;margin:1.5rem 0 1rem'>",
+            unsafe_allow_html=True,
+        )
+        with st.expander("✏️ Edit Data Karyawan & Absensi Harian", expanded=False):
+            _edit_tab_emp, _edit_tab_abs = st.tabs(["👤 Edit Karyawan", "📅 Edit Absensi Harian"])
+
+            # ── Tab 1: Edit data karyawan ─────────────────────────────
+            with _edit_tab_emp:
+                st.markdown(
+                    '<div style="font-size:0.82rem;color:#64748b;margin-bottom:0.8rem;">'
+                    'Perubahan disimpan ke database dan tercermin di rekap berikutnya.</div>',
+                    unsafe_allow_html=True,
+                )
+                with st.form(key=f"_form_emp_{account}_{periode}"):
+                    _ec1, _ec2 = st.columns(2)
+                    with _ec1:
+                        _new_nama  = st.text_input("Nama Karyawan", value=nama)
+                    with _ec2:
+                        _new_rules = st.text_input("Rules / Departemen", value=rules)
+                    _submitted_emp = st.form_submit_button("💾 Simpan Data Karyawan", type="primary")
+                if _submitted_emp:
+                    try:
+                        update_karyawan(account, _new_nama, _new_rules)
+                        st.cache_data.clear()
+                        st.success(f"✅ Data karyawan **{_new_nama}** berhasil diperbarui.")
+                    except Exception as _e_kary:
+                        st.error(f"❌ Gagal menyimpan: {_e_kary}")
+
+            # ── Tab 2: Edit absensi harian ────────────────────────────
+            with _edit_tab_abs:
+                _ALL_STATUS_OPTS = [
+                    "S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
+                    "WFA", "1/2 WFA", "WFS", "DW", "K", "Off",
+                    "HL", "ML", "WML", "OT", "None",
+                ]
+                st.markdown(
+                    '<div style="font-size:0.82rem;color:#64748b;margin-bottom:0.6rem;">'
+                    'Edit jam masuk/keluar, pilih klasifikasi manual, dan tambah catatan. '
+                    'Centang <b>Override</b> untuk menandai baris yang ditetapkan manual '
+                    '(bukan hasil engine otomatis).</div>',
+                    unsafe_allow_html=True,
+                )
+
+                _raw_daily = get_daily(account, periode)
+                if _raw_daily.empty:
+                    st.info("Tidak ada data harian yang dapat diedit.")
+                else:
+                    _erows = []
+                    for _, _er in _raw_daily.iterrows():
+                        _ks = str(_er.get("status_klasifikasi") or "").strip()
+                        _kfirst = (_ks.split("|")[0].strip() if "|" in _ks else _ks) or "None"
+                        if _kfirst not in _ALL_STATUS_OPTS:
+                            _kfirst = "None"
+                        _erows.append({
+                            "Tanggal"    : str(_er["tanggal"]),
+                            "Shift"      : str(_er.get("shift") or ""),
+                            "Jam Masuk"  : str(_er.get("jam_masuk")  or ""),
+                            "Jam Keluar" : str(_er.get("jam_keluar") or ""),
+                            "Klasifikasi": _kfirst,
+                            "Catatan"    : str(_er.get("catatan")    or ""),
+                            "Override"   : bool(_er.get("is_manual_override") or 0),
+                        })
+                    _edit_df = pd.DataFrame(_erows)
+
+                    _edited_df = st.data_editor(
+                        _edit_df,
+                        key=f"_editor_{account}_{periode}",
+                        use_container_width=True,
+                        height=min(60 + len(_edit_df) * 35, 440),
+                        hide_index=True,
+                        column_config={
+                            "Tanggal"    : st.column_config.TextColumn(
+                                "📅 Tanggal", disabled=True, width="medium"),
+                            "Shift"      : st.column_config.TextColumn(
+                                "⏰ Shift", disabled=True, width="medium"),
+                            "Jam Masuk"  : st.column_config.TextColumn(
+                                "🕐 Jam Masuk", width="small"),
+                            "Jam Keluar" : st.column_config.TextColumn(
+                                "🕔 Jam Keluar", width="small"),
+                            "Klasifikasi": st.column_config.SelectboxColumn(
+                                "📊 Klasifikasi",
+                                options=_ALL_STATUS_OPTS,
+                                required=True,
+                                width="small",
+                            ),
+                            "Catatan"    : st.column_config.TextColumn(
+                                "📝 Catatan / Keterangan", width="large"),
+                            "Override"   : st.column_config.CheckboxColumn(
+                                "🔒 Override", width="small"),
+                        },
+                    )
+
+                    if st.button(
+                        "💾 Simpan Semua Perubahan Absensi",
+                        key=f"_btn_save_{account}_{periode}",
+                        type="primary",
+                    ):
+                        _saved_n, _err_list = 0, []
+                        for _, _row in _edited_df.iterrows():
+                            try:
+                                update_absensi_row(
+                                    account            = account,
+                                    tanggal            = _row["Tanggal"],
+                                    jam_masuk          = str(_row["Jam Masuk"]   or ""),
+                                    jam_keluar         = str(_row["Jam Keluar"]  or ""),
+                                    status_klasifikasi = str(_row["Klasifikasi"] or "None"),
+                                    catatan            = str(_row["Catatan"]     or ""),
+                                    is_manual_override = 1 if _row["Override"] else 0,
+                                )
+                                _saved_n += 1
+                            except Exception as _e_row:
+                                _err_list.append(f"{_row['Tanggal']}: {_e_row}")
+                        st.cache_data.clear()
+                        if _err_list:
+                            st.warning(
+                                f"⚠️ {_saved_n} baris tersimpan, "
+                                f"{len(_err_list)} gagal. Error pertama: {_err_list[0]}"
+                            )
+                        else:
+                            st.success(
+                                f"✅ {_saved_n} baris absensi berhasil disimpan ke database."
+                            )
 
     st.caption("💡 Klik di luar kotak ini untuk menutup")
 
@@ -1465,6 +1611,37 @@ _LOGIC_HTML = (
     '- Keempat label diperiksa <b>setelah WFA/½WFA</b> (langkah 9–12) dan <b>sebelum cek keterlambatan</b> (langkah 13–14)<br>'
     '- Bersifat <b>standalone</b> — karyawan dengan HL/ML/WML/OT tidak dikenai cek durasi keterlambatan<br><br>'
     '</div>'
+
+    '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
+    'text-transform:uppercase;letter-spacing:0.06em;">✏️ Fitur Edit Manual</div>'
+
+    '<div style="background:#f0fdf4;border-radius:8px;padding:0.7rem 1rem;margin-bottom:1.2rem;'
+    'font-size:0.82rem;border-left:3px solid #22c55e;">'
+    '<b>Cara akses:</b> Klik baris karyawan di tabel utama → buka expander '
+    '<i>"✏️ Edit Data Karyawan &amp; Absensi Harian"</i> di bagian bawah dialog.<br><br>'
+
+    '<b>1. Edit Data Karyawan</b><br>'
+    '&nbsp;&nbsp;• <b>Nama Karyawan</b> — koreksi ejaan atau perubahan nama resmi<br>'
+    '&nbsp;&nbsp;• <b>Rules / Departemen</b> — pindah divisi atau koreksi pengelompokan<br>'
+    '&nbsp;&nbsp;• Perubahan langsung tersimpan ke database dan tercermin di rekap berikutnya<br><br>'
+
+    '<b>2. Edit Absensi Harian (per baris)</b><br>'
+    '&nbsp;&nbsp;• <b>Jam Masuk / Jam Keluar</b> — koreksi jam jika ada salah input atau missed punch<br>'
+    '&nbsp;&nbsp;• <b>Klasifikasi</b> (dropdown) — override manual: pilih salah satu dari '
+    '<code>S, Late, 1/2 UL, UL, AL, 1/2 AL, WFA, 1/2 WFA, WFS, DW, K, Off, HL, ML, WML, OT, None</code><br>'
+    '&nbsp;&nbsp;• <b>Catatan / Keterangan</b> (kolom baru) — teks bebas, misal: '
+    '"izin lisan", "sakit tanpa surat", "dinas luar kota"<br>'
+    '&nbsp;&nbsp;• <b>Override</b> (checkbox) — centang untuk menandai baris yang '
+    'ditetapkan manual; ditampilkan sebagai ✏️ di kolom detail<br><br>'
+
+    '<b>Catatan penting:</b><br>'
+    '&nbsp;&nbsp;• Edit hanya tersedia untuk data yang sudah tersimpan di database '
+    '(terjadi otomatis setiap kali file Excel diupload)<br>'
+    '&nbsp;&nbsp;• Override tidak mengubah logika engine — hanya menimpa nilai '
+    '<code>status_klasifikasi</code> di DB; rekap otomatis mengikuti nilai DB<br>'
+    '&nbsp;&nbsp;• Setelah menyimpan, tutup dan buka kembali dialog untuk melihat perubahan'
+    '</div>'
+
 
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
     'text-transform:uppercase;letter-spacing:0.06em;">🔒 Semua Status Bersifat Standalone</div>'
