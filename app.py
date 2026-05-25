@@ -1393,6 +1393,10 @@ with btn_col:
         st.session_state.dialog_emp    = None
         st.rerun()
 
+if st.session_state.dialog_target == "logic":
+    st.session_state.dialog_target = None
+    show_logic_dialog()
+    
 _NEW_PERIODE_SENTINEL = "- Upload file baru -"
 
 if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
