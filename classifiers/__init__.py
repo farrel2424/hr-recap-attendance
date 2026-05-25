@@ -65,6 +65,10 @@ from .annual_leave import classify as _classify_annual_leave
 from .ul           import classify as _classify_ul
 from .wfa          import classify as _classify_wfa
 from .wfs          import classify as _classify_wfs
+from .hl           import classify as _classify_hl
+from .ml           import classify as _classify_ml
+from .wml          import classify as _classify_wml
+from .ot           import classify as _classify_ot
 from .dw           import classify as _classify_dw
 from .k_sick       import classify as _classify_k_sick
 from .off          import classify as _classify_off, OFF_RESULTS
@@ -102,6 +106,10 @@ def classify(
     wfh_count=None,       # Kolom "WFH-WorkFromHome-家办公(Day(s))"
     offsite_hour=None,    # Kolom "Offsite(Hour)"
     missed_punch_count=None, # Kolom "Number of missed punches(Count)"
+    hl_count=None,           # Kolom "HL-Happy(Marry)-婚假(Day(s))"
+    ml_count=None,           # Kolom "ML-MaternityLeave-产假(Day(s))"
+    wml_count=None,          # Kolom "WML-WifeMater-妻产假(Day(s))"
+    ot_count=None,           # Kolom "OT - Others - 其他(Day(s))"
 ) -> list[str] | None:
     """
     Klasifikasi satu baris absensi.
@@ -174,7 +182,27 @@ def classify(
     if wfa_result:
         return wfa_result
 
-    # ── 9 & 10. Keterlambatan masuk + pulang lebih awal ─────────────────────
+    # ── 9. HL — Cuti Pernikahan ─────────────────────────────────────────────
+    hl_result = _classify_hl(hl_count)
+    if hl_result:
+        return hl_result
+
+    # ── 10. ML — Cuti Melahirkan ─────────────────────────────────────────────
+    ml_result = _classify_ml(ml_count)
+    if ml_result:
+        return ml_result
+
+    # ── 11. WML — Cuti Istri Melahirkan ─────────────────────────────────────
+    wml_result = _classify_wml(wml_count)
+    if wml_result:
+        return wml_result
+
+    # ── 12. OT — Cuti Lainnya ───────────────────────────────────────────────
+    ot_result = _classify_ot(ot_count)
+    if ot_result:
+        return ot_result
+
+    # ── 13 & 14. Keterlambatan masuk + pulang lebih awal ────────────────────
     #   Kedua kolom dievaluasi terlebih dahulu, lalu diambil yang paling berat.
     #   Severity: 1/2 UL  >  Late
     #
@@ -191,7 +219,7 @@ def classify(
             return ["1/2 UL"]
         return ["Late"]
 
-    # ── 10.5. Missed punch = 1 → 1/2 UL ────────────────────────────────────
+    # ── 14.5. Missed punch = 1 → 1/2 UL ────────────────────────────────────
     #   Jika jumlah punch yang terlewat tepat 1, karyawan dianggap tidak
     #   melengkapi presensi sehingga dikenai setengah hari Unpaid Leave.
     #   Hanya aktif bila langkah 9-10 tidak menangkap keterlambatan/early dep.
@@ -199,11 +227,11 @@ def classify(
     if _mp_val is not None and abs(_mp_val - 1.0) < 0.01:
         return ["1/2 UL"]
 
-    # ── 11. S (Shift) — att_result TEPAT "Normal" atau "Normal（Correction…）" ─
+    # ── 15. S (Shift) — att_result TEPAT "Normal" atau "Normal（Correction…）" ─
     if att_str in S_ATT_RESULTS:
         return _classify_normal()   # returns ["S"]
 
-    # ── 12. Tidak diklasifikasi ──────────────────────────────────────────────
+    # ── 16. Tidak diklasifikasi ──────────────────────────────────────────────
     return None
 
 
@@ -222,6 +250,10 @@ def classify_str(
     wfh_count=None,
     offsite_hour=None,
     missed_punch_count=None,
+    hl_count=None,
+    ml_count=None,
+    wml_count=None,
+    ot_count=None,
 ) -> str | None:
     """
     Versi string dari classify() — untuk disimpan ke DB (dipisah '|').
@@ -240,6 +272,10 @@ def classify_str(
         duration_early=duration_early,
         wfh_count=wfh_count,
         missed_punch_count=missed_punch_count,
+        hl_count=hl_count,
+        ml_count=ml_count,
+        wml_count=wml_count,
+        ot_count=ot_count,
     )
     if result is None:
         return None

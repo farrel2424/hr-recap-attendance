@@ -94,6 +94,10 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .metric-ksick    { background: #fdf2f8; border-left: 4px solid #ec4899; }
 .metric-off      { background: #f8fafc; border-left: 4px solid #94a3b8; }
 .metric-ul       { background: #f0fdfa; border-left: 4px solid #14b8a6; }
+.metric-hl       { background: #fffbeb; border-left: 4px solid #eab308; }
+.metric-ml       { background: #f0fdf4; border-left: 4px solid #4ade80; }
+.metric-wml      { background: #f0f9ff; border-left: 4px solid #22d3ee; }
+.metric-ot       { background: #f8fafc; border-left: 4px solid #94a3b8; }
 
 .metric-card .label {
     font-size: 0.75rem; color: #64748b; font-weight: 600;
@@ -117,6 +121,10 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .metric-ksick    .value { color: #db2777; }
 .metric-off      .value { color: #64748b; }
 .metric-ul       .value { color: #0f766e; }
+.metric-hl       .value { color: #a16207; }
+.metric-ml       .value { color: #15803d; }
+.metric-wml      .value { color: #0e7490; }
+.metric-ot       .value { color: #475569; }
 .metric-card .sub { font-size: 0.72rem; color: #94a3b8; font-weight: 400; margin-top: 0.35rem; }
 
 .stDownloadButton button {
@@ -156,6 +164,10 @@ def _find_duration_early_col(df)-> str | None: return _find_col(df, "Duration of
 def _find_wfh_col(df)           -> str | None: return _find_col(df, "WFH-WorkFromHome")
 def _find_offsite_col(df)       -> str | None: return _find_col(df, "Offsite(Hour)")
 def _find_missed_punch_col(df)  -> str | None: return _find_col(df, "Number of missed punches")
+def _find_hl_col(df)            -> str | None: return _find_col(df, "HL-Happy")
+def _find_ml_col(df)            -> str | None: return _find_col(df, "ML-Maternity")
+def _find_wml_col(df)           -> str | None: return _find_col(df, "WML-WifeMater")
+def _find_ot_col(df)            -> str | None: return _find_col(df, "OT - Others")
 
 _STATUS_ICON = {
     "S"      : "📋",
@@ -170,6 +182,10 @@ _STATUS_ICON = {
     "DW"     : "🚫",
     "K"      : "💊",
     "Off"    : "🏖️",
+    "HL"     : "💍",
+    "ML"     : "🤱",
+    "WML"    : "👶",
+    "OT"     : "📝",
     "None"   : "❓",
 }
 
@@ -201,6 +217,10 @@ _LABEL_MAP = {
     "1/2 UL":  "0,5UL",
     "Late":    "L",
     "S":       "S",
+    "HL":      "HL",
+    "ML":      "ML",
+    "WML":     "WML",
+    "OT":      "OT",
 }
 
 # Pemetaan background color (hex tanpa '#') untuk tiap label ekspor
@@ -218,6 +238,10 @@ _CELL_FILL: dict[str, PatternFill] = {
     "L":      PatternFill("solid", fgColor="FFF2CC"),  # kuning      — Late / pulang cepat
     "K":      PatternFill("solid", fgColor="F4CCCC"),  # merah muda  — Sakit dengan surat
     "DW":     PatternFill("solid", fgColor="EA9999"),  # merah       — Absence / tidak hadir
+    "HL":     PatternFill("solid", fgColor="FFE599"),  # kuning emas  — cuti pernikahan
+    "ML":     PatternFill("solid", fgColor="B6D7A8"),  # hijau sedang — cuti melahirkan
+    "WML":    PatternFill("solid", fgColor="A2C4C9"),  # teal         — cuti istri melahirkan
+    "OT":     PatternFill("solid", fgColor="D9D9D9"),  # abu-abu      — cuti lainnya
 }
 
 
@@ -252,6 +276,10 @@ def get_employee_daily(file_bytes, account):
     wfh_col         = _find_wfh_col(df_emp)
     offsite_col     = _find_offsite_col(df_emp)
     missed_punch_col  = _find_missed_punch_col(df_emp)
+    hl_col            = _find_hl_col(df_emp)
+    ml_col            = _find_ml_col(df_emp)
+    wml_col           = _find_wml_col(df_emp)
+    ot_col            = _find_ot_col(df_emp)
 
     def _parse_hours(val):
         if val is None:
@@ -283,6 +311,10 @@ def get_employee_daily(file_bytes, account):
             wfh_count=r.get(wfh_col)            if wfh_col       else None,
             offsite_hour=r.get(offsite_col)     if offsite_col   else None,
             missed_punch_count=r.get(missed_punch_col) if missed_punch_col else None,
+            hl_count=r.get(hl_col)   if hl_col   else None,
+            ml_count=r.get(ml_col)   if ml_col   else None,
+            wml_count=r.get(wml_col) if wml_col  else None,
+            ot_count=r.get(ot_col)   if ot_col   else None,
         )
 
         if _klas_raw is None:
@@ -385,6 +417,11 @@ def get_all_daily_for_calendar(file_bytes):
     offsite_col   = _find_offsite_col(df_all)
     missed_punch_col  = _find_missed_punch_col(df_all)
 
+    hl_col            = _find_hl_col(df_all)
+    ml_col            = _find_ml_col(df_all)
+    wml_col           = _find_wml_col(df_all)
+    ot_col            = _find_ot_col(df_all)
+
     df_all = df_all[df_all["Account"].notna() & df_all["Rules"].notna()]
     df_all = df_all[~df_all["Account"].astype(str).str.strip().isin(["", "--"])]
 
@@ -413,6 +450,10 @@ def get_all_daily_for_calendar(file_bytes):
             wfh_count=r.get(wfh_col)            if wfh_col       else None,
             offsite_hour=r.get(offsite_col)     if offsite_col   else None,
             missed_punch_count=r.get(missed_punch_col) if missed_punch_col else None,
+            hl_count=r.get(hl_col)   if hl_col   else None,
+            ml_count=r.get(ml_col)   if ml_col   else None,
+            wml_count=r.get(wml_col) if wml_col  else None,
+            ot_count=r.get(ot_col)   if ot_col   else None,
         )
         classification = klas_raw[0] if klas_raw else None
 
@@ -534,6 +575,10 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
     wfs_df    = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "WFS"))].copy()
     dw_df     = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "DW"))].copy()
     k_sick_df = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "K"))].copy()
+    hl_df     = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "HL"))].copy()
+    ml_df     = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "ML"))].copy()
+    wml_df    = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "WML"))].copy()
+    ot_df     = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "OT"))].copy()
 
     n_late   = len(late_df)
     n_k      = len(k_df)
@@ -544,6 +589,10 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
     n_wfs    = len(wfs_df)
     n_dw     = len(dw_df)
     n_k_sick = len(k_sick_df)
+    n_hl     = len(hl_df)
+    n_ml     = len(ml_df)
+    n_wml    = len(wml_df)
+    n_ot     = len(ot_df)
 
     with st.expander(
         f"⚠️ Pelanggaran Jam Kerja  —  🕐 Late: {n_late}  |  ⛔ 1/2 UL: {n_k}  |  📋 UL: {n_ul}",
@@ -688,6 +737,41 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                 column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
             )
 
+    with st.expander(
+        f"🪪 Cuti Khusus  —  💍 HL: {n_hl}  |  🤱 ML: {n_ml}  |  👶 WML: {n_wml}  |  📝 OT: {n_ot}",
+        expanded=False,
+    ):
+        if n_hl == 0 and n_ml == 0 and n_wml == 0 and n_ot == 0:
+            st.info("ℹ️ Tidak ada data HL / ML / WML / OT pada periode ini.")
+        else:
+            sc1, sc2, sc3, sc4 = st.columns(4)
+            for (col, label, val, bg, bc, tc) in [
+                (sc1, "💍 HL (Pernikahan)",       n_hl,  "#fffbeb", "#eab308", "#92400e"),
+                (sc2, "🤱 ML (Melahirkan)",        n_ml,  "#f0fdf4", "#4ade80", "#166534"),
+                (sc3, "👶 WML (Istri Melahirkan)", n_wml, "#f0f9ff", "#22d3ee", "#0e7490"),
+                (sc4, "📝 OT (Cuti Lainnya)",      n_ot,  "#f8fafc", "#94a3b8", "#475569"),
+            ]:
+                with col:
+                    st.markdown(
+                        f'<div style="background:{bg};border-left:4px solid {bc};border-radius:10px;'
+                        f'padding:.8rem 1.1rem;text-align:center;margin-bottom:.8rem;">'
+                        f'<div style="font-size:0.72rem;color:{tc};font-weight:600;text-transform:uppercase;">{label}</div>'
+                        f'<div style="font-size:1.7rem;font-weight:700;color:{tc};">'
+                        f'{val}<span style="font-size:.9rem"> hari</span></div></div>',
+                        unsafe_allow_html=True,
+                    )
+
+            special_combined = pd.concat([hl_df, ml_df, wml_df, ot_df]).sort_values("Tanggal").reset_index(drop=True)
+            special_combined = special_combined.drop_duplicates(subset=["Tanggal"]).reset_index(drop=True)
+            special_combined["No."] = range(1, len(special_combined) + 1)
+            st.dataframe(
+                special_combined[["No.", "Tanggal", "Klasifikasi", "Shift", "Jam Masuk", "Jam Keluar", "Status"]],
+                width="stretch",
+                height=min(60 + len(special_combined) * 35, 380),
+                hide_index=True,
+                column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
+            )
+
     with st.expander(f"📑 Detail Lengkap per Hari  —  {len(detail_df)} hari tercatat", expanded=False):
         dd = detail_df.copy()
         dd["Jam Kerja"] = dd["Jam Kerja"].apply(lambda x: f"{x:.1f} jam" if x > 0 else "-")
@@ -728,6 +812,11 @@ def process_file(file_bytes):
     offsite_col   = _find_offsite_col(df)
     missed_punch_col = _find_missed_punch_col(df)
 
+    hl_col           = _find_hl_col(df)
+    ml_col           = _find_ml_col(df)
+    wml_col          = _find_wml_col(df)
+    ot_col           = _find_ot_col(df)
+
     df = df.copy()
     df = df[df["Account"].notna() & df["Rules"].notna()]
     df = df[~df["Account"].astype(str).str.strip().isin(["", "--"])]
@@ -746,6 +835,10 @@ def process_file(file_bytes):
             wfh_count=r.get(wfh_col)            if wfh_col       else None,
             offsite_hour=r.get(offsite_col)     if offsite_col   else None,
             missed_punch_count=r.get(missed_punch_col) if missed_punch_col else None,
+            hl_count=r.get(hl_col)   if hl_col   else None,
+            ml_count=r.get(ml_col)   if ml_col   else None,
+            wml_count=r.get(wml_col) if wml_col  else None,
+            ot_count=r.get(ot_col)   if ot_col   else None,
         ),
         axis=1,
     )
@@ -768,7 +861,8 @@ def process_file(file_bytes):
     ).reset_index()
     pivot.columns.name = None
 
-    ALL_STATUS_COLS = ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL", "WFA", "1/2 WFA", "WFS", "DW", "K", "Off"]
+    ALL_STATUS_COLS = ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL", "WFA", "1/2 WFA", "WFS", "DW", "K", "Off",
+                       "HL", "ML", "WML", "OT"]
     for col in ALL_STATUS_COLS:
         if col not in pivot.columns:
             pivot[col] = 0
@@ -785,7 +879,8 @@ def process_file(file_bytes):
     result = pivot[["No.", "Nama", "Account", "Rules",
                     "S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
                     "WFA", "1/2 WFA", "WFS",
-                    "DW", "K", "Off"]].copy()
+                    "DW", "K", "Off",
+                    "HL", "ML", "WML", "OT"]].copy()
 
     stats = {
         "total_rows": len(df),
@@ -944,6 +1039,10 @@ OPTIONAL_COLS_DEF = [
     ("1/2 WFA","🏡 1/2 WFA",     "Work From Home setengah hari"),
     ("WFS",    "📍 WFS",         "Work From Offsite"),
     ("Off",    "🏖️ Off",         "Rest / Not scheduled"),
+    ("HL",     "💍 HL",           "Cuti Pernikahan"),
+    ("ML",     "🤱 ML",           "Cuti Melahirkan"),
+    ("WML",    "👶 WML",          "Cuti Istri Melahirkan"),
+    ("OT",     "📝 OT",           "Cuti Lainnya"),
 ]
 OPTIONAL_KEYS   = [c[0] for c in OPTIONAL_COLS_DEF]
 OPTIONAL_LABELS = {c[0]: c[1] for c in OPTIONAL_COLS_DEF}
@@ -966,6 +1065,10 @@ COL_CONFIG_ALL = {
     "1/2 WFA" : st.column_config.NumberColumn("🏡 1/2 WFA",    format="%d", width="small"),
     "WFS"     : st.column_config.NumberColumn("📍 WFS",        format="%d", width="small"),
     "Off"     : st.column_config.NumberColumn("🏖️ Off",        format="%d", width="small"),
+    "HL"      : st.column_config.NumberColumn("💍 HL",          format="%d", width="small"),
+    "ML"      : st.column_config.NumberColumn("🤱 ML",          format="%d", width="small"),
+    "WML"     : st.column_config.NumberColumn("👶 WML",         format="%d", width="small"),
+    "OT"      : st.column_config.NumberColumn("📝 OT",          format="%d", width="small"),
 }
 
 
@@ -1050,6 +1153,18 @@ _LOGIC_HTML = (
     '<tr style="background:#f8fafc;"><td style="padding:0.3rem 0.7rem;"><b>DW</b></td>'
     '<td style="padding:0.3rem 0.7rem;"><span style="background:#EA9999;padding:2px 10px;border-radius:3px;">▮ #EA9999</span></td>'
     '<td style="padding:0.3rem 0.7rem;">Tidak hadir / Absence — merah</td></tr>'
+    '<tr><td style="padding:0.3rem 0.7rem;"><b>HL</b></td>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#FFE599;padding:2px 10px;border-radius:3px;">▮ #FFE599</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Cuti Pernikahan — kuning emas</td></tr>'
+    '<tr style="background:#f8fafc;"><td style="padding:0.3rem 0.7rem;"><b>ML</b></td>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#B6D7A8;padding:2px 10px;border-radius:3px;">▮ #B6D7A8</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Cuti Melahirkan — hijau sedang</td></tr>'
+    '<tr><td style="padding:0.3rem 0.7rem;"><b>WML</b></td>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#A2C4C9;padding:2px 10px;border-radius:3px;">▮ #A2C4C9</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Cuti Istri Melahirkan — teal</td></tr>'
+    '<tr style="background:#f8fafc;"><td style="padding:0.3rem 0.7rem;"><b>OT</b></td>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#D9D9D9;padding:2px 10px;border-radius:3px;">▮ #D9D9D9</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Cuti Lainnya — abu-abu</td></tr>'
     '<tr><td style="padding:0.3rem 0.7rem;"><i>(kosong)</i></td>'
     '<td style="padding:0.3rem 0.7rem;"><span style="background:#FFFFFF;border:1px solid #e2e8f0;padding:2px 10px;border-radius:3px;">▮ putih</span></td>'
     '<td style="padding:0.3rem 0.7rem;">None — tidak memenuhi kondisi manapun</td></tr>'
@@ -1148,6 +1263,25 @@ _LOGIC_HTML = (
     '<td style="padding:0.4rem 0.7rem;"><code>Number of missed punches(Count)</code></td>'
     '<td style="padding:0.4rem 0.7rem;">= <b>1</b> (tepat satu punch terlewat)</td>'
     '</tr>'
+    '<tr><td style="padding:0.4rem 0.7rem;">💍 HL</td>'
+    '<td style="padding:0.4rem 0.7rem;"><code>HL-Happy(Marry)-婚假(Day(s))</code></td>'
+    '<td style="padding:0.4rem 0.7rem;">nilai = <b>1</b></td>'
+    '</tr>'
+    '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;">🤱 ML</td>'
+    '<td style="padding:0.4rem 0.7rem;"><code>ML-MaternityLeave-产假(Day(s))</code></td>'
+    '<td style="padding:0.4rem 0.7rem;">&ne; "--" / kosong / 0 (nilai hari melahirkan)</td>'
+    '</tr>'
+    '<tr>'
+    '<td style="padding:0.4rem 0.7rem;">👶 WML</td>'
+    '<td style="padding:0.4rem 0.7rem;"><code>WML-WifeMater-妻产假(Day(s))</code></td>'
+    '<td style="padding:0.4rem 0.7rem;">nilai = <b>1</b></td>'
+    '</tr>'
+    '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;">📝 OT</td>'
+    '<td style="padding:0.4rem 0.7rem;"><code>OT - Others - 其他(Day(s))</code></td>'
+    '<td style="padding:0.4rem 0.7rem;">nilai = <b>1</b></td>'
+    '</tr>'
     '</table>'
 
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
@@ -1213,6 +1347,24 @@ _LOGIC_HTML = (
     '<td style="padding:0.4rem 0.7rem;">Kolom <code>WFH-WorkFromHome</code> = <b>0.5</b> → Work From Home setengah hari.</td>'
     '</tr>'
 
+    '<tr>'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">💍 HL</td>'
+    '<td style="padding:0.4rem 0.7rem;">Kolom <code>HL-Happy(Marry)</code> = <b>1</b> — cuti pernikahan satu hari.</td>'
+    '</tr>'
+    '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🤱 ML</td>'
+    '<td style="padding:0.4rem 0.7rem;">Kolom <code>ML-MaternityLeave</code> berisi nilai <b>selain "--" / kosong / 0</b> '
+    '— jumlah hari cuti melahirkan berapapun memicu ML. Dicek setelah HL.</td>'
+    '</tr>'
+    '<tr>'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">👶 WML</td>'
+    '<td style="padding:0.4rem 0.7rem;">Kolom <code>WML-WifeMater</code> = <b>1</b> — cuti suami saat istri melahirkan.</td>'
+    '</tr>'
+    '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">📝 OT</td>'
+    '<td style="padding:0.4rem 0.7rem;">Kolom <code>OT - Others</code> = <b>1</b> — jenis cuti lainnya yang tidak masuk kategori di atas.</td>'
+    '</tr>'
+
     '<tr style="background:#f1f5f9;">'
     '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">🕐 Late</td>'
     '<td style="padding:0.4rem 0.7rem;">'
@@ -1267,13 +1419,17 @@ _LOGIC_HTML = (
     '&nbsp;&nbsp;&nbsp;Kolom UL-Unpaid Leave = 0.5 &rarr; <b>1/2 UL</b> &mdash; selesai<br>'
     '8.  🏠 Kolom WFH-WorkFromHome = 1   &rarr; <b>WFA</b> &mdash; selesai<br>'
     '&nbsp;&nbsp;&nbsp;Kolom WFH-WorkFromHome = 0.5 &rarr; <b>1/2 WFA</b> &mdash; selesai<br>'
-    '9 &amp; 10. 🕐 Kolom Duration of late arrival <b>+</b> Duration of early departure<br>'
+    '9.  💍 Kolom HL-Happy(Marry) = <b>1</b> &rarr; <b>HL</b> &mdash; selesai<br>'
+    '10. 🤱 Kolom ML-MaternityLeave &ne; "--"/kosong/0 &rarr; <b>ML</b> &mdash; selesai<br>'
+    '11. 👶 Kolom WML-WifeMater = <b>1</b> &rarr; <b>WML</b> &mdash; selesai<br>'
+    '12. 📝 Kolom OT - Others = <b>1</b> &rarr; <b>OT</b> &mdash; selesai<br>'
+    '13 &amp; 14. 🕐 Kolom Duration of late arrival <b>+</b> Duration of early departure<br>'
     '&nbsp;&nbsp;&nbsp;(Keduanya dievaluasi — diambil yang paling berat)<br>'
     '&nbsp;&nbsp;&nbsp;+-- Salah satu &gt;120 mnt &rarr; <b>1/2 UL</b> &mdash; selesai<br>'
     '&nbsp;&nbsp;&nbsp;+-- Keduanya 1-120 mnt &nbsp;&rarr; <b>Late</b> &mdash; selesai<br>'
-    '10.5 💼 Kolom Number of missed punches(Count) = <b>1</b> &rarr; <b>1/2 UL</b> &mdash; selesai<br>'
-    '11. 📋 Att TEPAT "Normal" atau "Normal（Correction of missed punch）" &rarr; <b>S</b><br>'
-    '12. ❓ Selain itu &rarr; <b>None</b> (sel ekspor kosong, tanpa warna)'
+    '14.5 💼 Kolom Number of missed punches(Count) = <b>1</b> &rarr; <b>1/2 UL</b> &mdash; selesai<br>'
+    '15. 📋 Att TEPAT "Normal" atau "Normal（Correction of missed punch）" &rarr; <b>S</b><br>'
+    '16. ❓ Selain itu &rarr; <b>None</b> (sel ekspor kosong, tanpa warna)'
     '</div>'
 
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
@@ -1301,6 +1457,13 @@ _LOGIC_HTML = (
     '- <b>Sekarang:</b> semua tipe shift hadir normal → <b><code>S</code></b> (seragam)<br><br>'
 
     '<b>4. WFS, WFA/1/2 WFA, AL/1/2 AL, UL/1/2 UL, DW, K, Late/1/2 UL dari durasi — tidak berubah.</b>'
+    '<b>5. ➕ Empat Label Cuti Khusus Baru (Update Terbaru):</b><br>'
+    '- <b>💍 HL</b> (Happy/Marry Leave): kolom <code>HL-Happy(Marry)-婚假(Day(s))</code> = 1 → label <code>HL</code>, ekspor warna kuning emas #FFE599<br>'
+    '- <b>🤱 ML</b> (Maternity Leave): kolom <code>ML-MaternityLeave-产假(Day(s))</code> berisi nilai selain "--"/0/kosong → label <code>ML</code>, ekspor warna hijau #B6D7A8<br>'
+    '- <b>👶 WML</b> (Wife Maternity Leave): kolom <code>WML-WifeMater-妻产假(Day(s))</code> = 1 → label <code>WML</code>, ekspor warna teal #A2C4C9<br>'
+    '- <b>📝 OT</b> (Others): kolom <code>OT - Others - 其他(Day(s))</code> = 1 → label <code>OT</code>, ekspor warna abu-abu #D9D9D9<br>'
+    '- Keempat label diperiksa <b>setelah WFA/½WFA</b> (langkah 9–12) dan <b>sebelum cek keterlambatan</b> (langkah 13–14)<br>'
+    '- Bersifat <b>standalone</b> — karyawan dengan HL/ML/WML/OT tidak dikenai cek durasi keterlambatan<br><br>'
     '</div>'
 
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
@@ -1321,6 +1484,10 @@ _LOGIC_HTML = (
     '- 💊 <b>K</b>: sakit dengan surat → ekspor: <code style="background:#F4CCCC;padding:1px 6px;border-radius:3px;">K</code><br>'
     '- 🚫 <b>DW</b>: tidak hadir → ekspor: <code style="background:#EA9999;padding:1px 6px;border-radius:3px;">DW</code><br>'
     '- 🏖️ <b>Off</b>: hari libur / tidak terjadwal → ekspor: <code style="background:#CFE2F3;padding:1px 6px;border-radius:3px;">OFF</code><br>'
+    '- 💍 <b>HL</b>: cuti pernikahan → ekspor: <code style="background:#FFE599;padding:1px 6px;border-radius:3px;">HL</code><br>'
+    '- 🤱 <b>ML</b>: cuti melahirkan → ekspor: <code style="background:#B6D7A8;padding:1px 6px;border-radius:3px;">ML</code><br>'
+    '- 👶 <b>WML</b>: cuti istri melahirkan → ekspor: <code style="background:#A2C4C9;padding:1px 6px;border-radius:3px;">WML</code><br>'
+    '- 📝 <b>OT</b>: cuti lainnya → ekspor: <code style="background:#D9D9D9;padding:1px 6px;border-radius:3px;">OT</code><br>'
     '- ❓ <b>None</b>: tidak memenuhi kondisi manapun — sel ekspor <b>kosong</b> (putih)'
     '</div>'
 
@@ -1340,6 +1507,9 @@ _LOGIC_HTML = (
     '- 🗄️ DB menggunakan separator <code>|</code> (pipe) untuk menghindari konflik dengan "1/2"<br>'
     '- 📋 Kolom KTP pada ekspor kalender <b>dikosongkan</b> — dapat diisi manual jika diperlukan<br>'
     '- ✏️ Semua tipe shift hadir (S1, S2, Night, dll.) ditampilkan sebagai <code>S</code> di ekspor'
+    '- 💍🤱👶📝 Karyawan dengan HL / ML / WML / OT <b>tidak dikenai</b> cek keterlambatan (Late/½UL)<br>'
+    '- 🤱 ML dipicu oleh nilai <b>apapun selain "--"/0/kosong</b> — termasuk jumlah hari seperti "90" atau "60"<br>'
+    '- 💍👶📝 HL, WML, OT dipicu hanya jika nilai kolom = <b>1</b> (tepat satu hari penuh)'
     '</div>'
 
     '</div>'
@@ -1455,6 +1625,10 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                     wfh_count=r.get(_wfh_col)              if _wfh_col       else None,
                     offsite_hour=r.get(_offsite_col)       if _offsite_col   else None,
                     missed_punch_count=r.get(_missed_punch_col) if _missed_punch_col else None,
+                    hl_count=r.get(_find_hl_col(df_raw))   if _find_hl_col(df_raw)   else None,
+                    ml_count=r.get(_find_ml_col(df_raw))   if _find_ml_col(df_raw)   else None,
+                    wml_count=r.get(_find_wml_col(df_raw)) if _find_wml_col(df_raw)  else None,
+                    ot_count=r.get(_find_ot_col(df_raw))   if _find_ot_col(df_raw)
                 ), axis=1,
             )
             save_periode(df_raw, _periode)
@@ -1477,9 +1651,11 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             "half_wfa": "1/2 WFA",
             "wfs": "WFS",
             "dw": "DW", "k_sick": "K", "off_count": "Off",
+            "hl": "HL", "ml": "ML", "wml": "WML", "ot": "OT",
         })
         for col in ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
-                    "WFA", "1/2 WFA", "WFS", "DW", "K", "Off"]:
+                    "WFA", "1/2 WFA", "WFS", "DW", "K", "Off",
+                    "HL", "ML", "WML", "OT"]:
             if col not in df_result.columns:
                 df_result[col] = 0
         file_bytes = None
@@ -1504,6 +1680,10 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     total_dw   = int(df_result["DW"].sum())
     total_ks   = int(df_result["K"].sum())
     total_off  = int(df_result["Off"].sum())
+    total_hl   = int(df_result["HL"].sum())  if "HL"  in df_result.columns else 0
+    total_ml   = int(df_result["ML"].sum())  if "ML"  in df_result.columns else 0
+    total_wml  = int(df_result["WML"].sum()) if "WML" in df_result.columns else 0
+    total_ot   = int(df_result["OT"].sum())  if "OT"  in df_result.columns else 0
     total_e    = stats["employees"]
 
     st.markdown(f"""
@@ -1576,6 +1756,28 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     <div class="sub">Rest / Not scheduled</div>
   </div>
 </div>
+<div class="metric-row" style="margin-top:-1rem;grid-template-columns: repeat(4, 1fr);">
+  <div class="metric-card metric-hl">
+    <div class="label"><span>💍</span> HL</div>
+    <div class="value">{total_hl:,}</div>
+    <div class="sub">Cuti Pernikahan</div>
+  </div>
+  <div class="metric-card metric-ml">
+    <div class="label"><span>🤱</span> ML</div>
+    <div class="value">{total_ml:,}</div>
+    <div class="sub">Cuti Melahirkan</div>
+  </div>
+  <div class="metric-card metric-wml">
+    <div class="label"><span>👶</span> WML</div>
+    <div class="value">{total_wml:,}</div>
+    <div class="sub">Cuti Istri Melahirkan</div>
+  </div>
+  <div class="metric-card metric-ot">
+    <div class="label"><span>📝</span> OT</div>
+    <div class="value">{total_ot:,}</div>
+    <div class="sub">Cuti Lainnya</div>
+  </div>
+</div>
 """, unsafe_allow_html=True)
 
     st.markdown('<p class="section-title">📋 Hasil Summary per Karyawan</p>', unsafe_allow_html=True)
@@ -1597,8 +1799,9 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             unsafe_allow_html=True,
         )
         opt_cols_selected = []
-        oc1, oc2, oc3, oc4, oc5, oc6, oc7 = st.columns(7)
-        opt_col_ui = [oc1, oc2, oc3, oc4, oc5, oc6, oc7]
+        _r1 = st.columns(7)
+        _r2 = st.columns(4)
+        opt_col_ui = _r1 + _r2
         for i, (key, label, desc) in enumerate(OPTIONAL_COLS_DEF):
             with opt_col_ui[i]:
                 checked = st.checkbox(label, value=False, help=desc, key=f"col_{key}")

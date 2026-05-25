@@ -148,7 +148,15 @@ def get_rekap(periode: str):
                 SUM(CASE WHEN a.status_klasifikasi = 'K'
                          THEN 1 ELSE 0 END) AS k_sick,
                 SUM(CASE WHEN a.status_klasifikasi = 'Off'
-                         THEN 1 ELSE 0 END) AS off_count
+                         THEN 1 ELSE 0 END) AS off_count,
+                SUM(CASE WHEN a.status_klasifikasi = 'HL'
+                         THEN 1 ELSE 0 END) AS hl,
+                SUM(CASE WHEN a.status_klasifikasi = 'ML'
+                         THEN 1 ELSE 0 END) AS ml,
+                SUM(CASE WHEN a.status_klasifikasi = 'WML'
+                         THEN 1 ELSE 0 END) AS wml,
+                SUM(CASE WHEN a.status_klasifikasi = 'OT'
+                         THEN 1 ELSE 0 END) AS ot
             FROM karyawan k
             JOIN absensi_harian a ON a.karyawan_id = k.id
             WHERE a.periode = ?
