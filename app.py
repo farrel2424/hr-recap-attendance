@@ -1628,7 +1628,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                     hl_count=r.get(_find_hl_col(df_raw))   if _find_hl_col(df_raw)   else None,
                     ml_count=r.get(_find_ml_col(df_raw))   if _find_ml_col(df_raw)   else None,
                     wml_count=r.get(_find_wml_col(df_raw)) if _find_wml_col(df_raw)  else None,
-                    ot_count=r.get(_find_ot_col(df_raw))   if _find_ot_col(df_raw)
+                    ot_count=r.get(_find_ot_col(df_raw))   if _find_ot_col(df_raw)   else None,
                 ), axis=1,
             )
             save_periode(df_raw, _periode)
