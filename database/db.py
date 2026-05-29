@@ -90,7 +90,7 @@ def save_periode(df_raw, periode: str):
             ).fetchone()["id"]
 
             import re
-            raw_time = str(r.get("Time", ""))
+            raw_time = str(r.get("Time_Date", ""))
             m = re.search(r'(\d{4})/(\d{2})/(\d{2})', raw_time)
             tanggal = f"{m.group(1)}-{m.group(2)}-{m.group(3)}" if m else None
             if not tanggal:
@@ -167,7 +167,9 @@ def get_rekap(periode: str):
                 SUM(CASE WHEN a.status_klasifikasi = 'WML'
                          THEN 1 ELSE 0 END) AS wml,
                 SUM(CASE WHEN a.status_klasifikasi = 'OT'
-                         THEN 1 ELSE 0 END) AS ot
+                         THEN 1 ELSE 0 END) AS ot,
+                SUM(CASE WHEN a.status_klasifikasi = 'RL'
+                         THEN 1 ELSE 0 END) AS rl
             FROM karyawan k
             JOIN absensi_harian a ON a.karyawan_id = k.id
             WHERE a.periode = ?

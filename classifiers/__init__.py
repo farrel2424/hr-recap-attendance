@@ -69,6 +69,7 @@ from .hl           import classify as _classify_hl
 from .ml           import classify as _classify_ml
 from .wml          import classify as _classify_wml
 from .ot           import classify as _classify_ot
+from .rl           import classify as _classify_rl
 from .dw           import classify as _classify_dw
 from .k_sick       import classify as _classify_k_sick
 from .off          import classify as _classify_off, OFF_RESULTS
@@ -110,6 +111,7 @@ def classify(
     ml_count=None,           # Kolom "ML-MaternityLeave-产假(Day(s))"
     wml_count=None,          # Kolom "WML-WifeMater-妻产假(Day(s))"
     ot_count=None,           # Kolom "OT - Others - 其他(Day(s))"
+    rl_count=None,           # Kolom "RL - Roster Leave(Day(s))"
 ) -> list[str] | None:
     """
     Klasifikasi satu baris absensi.
@@ -145,7 +147,8 @@ def classify(
     # ── 2. WFS — Normal (Offsite) ────────────────────────────────────────────
     #   att_result mengandung "Offsite" + kolom Offsite(Hour) terisi (bukan "--"/kosong)
     #   (Mendukung variasi tanda kurung biasa '()' maupun full-width '（）' khas Excel)
-    if "offsite" in att_str.lower() and not is_dash_or_empty(offsite_hour):
+    _ATT_WFS = {"Normal（Offsite）", "Normal（Correction of missed punch、Offsite）"}
+    if att_str in _ATT_WFS and not is_dash_or_empty(offsite_hour):
         return _classify_wfs()
 
     # ── 3. Lewati shift Rest / Not scheduled / kosong ───────────────────────
@@ -202,7 +205,12 @@ def classify(
     if ot_result:
         return ot_result
 
-    # ── 13 & 14. Keterlambatan masuk + pulang lebih awal ────────────────────
+    # ── 13. RL — Roster Leave ───────────────────────────────────────────
+    rl_result = _classify_rl(rl_count)
+    if rl_result:
+        return rl_result
+
+    # ── 14 & 15. Keterlambatan masuk + pulang lebih awal ────────────────────
     #   Kedua kolom dievaluasi terlebih dahulu, lalu diambil yang paling berat.
     #   Severity: 1/2 UL  >  Late
     #
@@ -254,6 +262,7 @@ def classify_str(
     ml_count=None,
     wml_count=None,
     ot_count=None,
+    rl_count=None,
 ) -> str | None:
     """
     Versi string dari classify() — untuk disimpan ke DB (dipisah '|').
@@ -276,6 +285,7 @@ def classify_str(
         ml_count=ml_count,
         wml_count=wml_count,
         ot_count=ot_count,
+        rl_count=rl_count,
     )
     if result is None:
         return None

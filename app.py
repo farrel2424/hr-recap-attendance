@@ -102,6 +102,7 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .metric-ml       { background: #f0fdf4; border-left: 4px solid #4ade80; }
 .metric-wml      { background: #f0f9ff; border-left: 4px solid #22d3ee; }
 .metric-ot       { background: #f8fafc; border-left: 4px solid #94a3b8; }
+.metric-rl       { background: #f0fdf4; border-left: 4px solid #4ade80; }
 
 .metric-card .label {
     font-size: 0.75rem; color: #64748b; font-weight: 600;
@@ -129,6 +130,7 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .metric-ml       .value { color: #15803d; }
 .metric-wml      .value { color: #0e7490; }
 .metric-ot       .value { color: #475569; }
+.metric-rl       .value { color: #15803d; }
 .metric-card .sub { font-size: 0.72rem; color: #94a3b8; font-weight: 400; margin-top: 0.35rem; }
 
 .stDownloadButton button {
@@ -172,6 +174,7 @@ def _find_hl_col(df)            -> str | None: return _find_col(df, "HL-Happy")
 def _find_ml_col(df)            -> str | None: return _find_col(df, "ML-Maternity")
 def _find_wml_col(df)           -> str | None: return _find_col(df, "WML-WifeMater")
 def _find_ot_col(df)            -> str | None: return _find_col(df, "OT - Others")
+def _find_rl_col(df) -> str | None: return _find_col(df, "RL - Roster Leave")
 
 _STATUS_ICON = {
     "S"      : "📋",
@@ -190,6 +193,7 @@ _STATUS_ICON = {
     "ML"     : "🤱",
     "WML"    : "👶",
     "OT"     : "📝",
+    "RL"     : "📅",
     "None"   : "❓",
 }
 
@@ -225,6 +229,7 @@ _LABEL_MAP = {
     "ML":      "ML",
     "WML":     "WML",
     "OT":      "OT",
+    "RL":      "RL",
 }
 
 # Pemetaan background color (hex tanpa '#') untuk tiap label ekspor
@@ -245,7 +250,8 @@ _CELL_FILL: dict[str, PatternFill] = {
     "HL":     PatternFill("solid", fgColor="FFE599"),  # kuning emas  — cuti pernikahan
     "ML":     PatternFill("solid", fgColor="B6D7A8"),  # hijau sedang — cuti melahirkan
     "WML":    PatternFill("solid", fgColor="A2C4C9"),  # teal         — cuti istri melahirkan
-    "OT":     PatternFill("solid", fgColor="D9D9D9"),  # abu-abu      — cuti lainnya
+    "OT":     PatternFill("solid", fgColor="D9D9D9"),  # abu-abu
+    "RL":     PatternFill("solid", fgColor="D9EAD3"),  # hijau muda — roster leave      — cuti lainnya
 }
 
 
@@ -267,9 +273,9 @@ def get_employee_daily(file_bytes, account):
     df_all = pd.read_excel(
         buf,
         sheet_name="General statistics and attendan",
-        header=4,
+        header=3,
         dtype={"Earliest": str, "Latest": str},
-    )
+    ).rename(columns={"Unnamed: 0": "Time_Date", "Unnamed: 1": "Name", "Unnamed: 2": "Account"})
     df_emp = df_all[df_all["Account"].astype(str).str.strip() == account].copy()
 
     k_sick_col      = _find_ksick_col(df_emp)
@@ -295,7 +301,7 @@ def get_employee_daily(file_bytes, account):
         except Exception:
             return 0.0
 
-    df_emp["Tanggal"]   = df_emp["Time"].astype(str).apply(parse_date_from_time)
+    df_emp["Tanggal"]   = df_emp["Time_Date"].astype(str).apply(parse_date_from_time)
     df_emp["Jam Kerja"] = df_emp["Actual working hours(Hour)"].apply(_parse_hours)
 
     rows = []
@@ -319,6 +325,7 @@ def get_employee_daily(file_bytes, account):
             ml_count=r.get(ml_col)   if ml_col   else None,
             wml_count=r.get(wml_col) if wml_col  else None,
             ot_count=r.get(ot_col)   if ot_col   else None,
+            rl_count=r.get(rl_col)   if rl_col   else None,
         )
 
         if _klas_raw is None:
@@ -411,9 +418,10 @@ def get_all_daily_for_calendar(file_bytes):
     df_all = pd.read_excel(
         buf,
         sheet_name="General statistics and attendan",
-        header=4,
+        header=3,
         dtype={"Earliest": str, "Latest": str},
-    )
+    ).rename(columns={"Unnamed: 0": "Time_Date", "Unnamed: 1": "Name", "Unnamed: 2": "Account"})
+
     k_sick_col    = _find_ksick_col(df_all)
     al_col        = _find_al_col(df_all)
     ul_col        = _find_ul_col(df_all)
@@ -437,7 +445,7 @@ def get_all_daily_for_calendar(file_bytes):
         name    = str(r["Name"]).strip() if pd.notna(r.get("Name")) else ""
         shift_t = str(r["Shift"]).strip() if isinstance(r["Shift"], str) else ""
 
-        raw_time = str(r.get("Time", ""))
+        raw_time = str(r.get("Time_Date", ""))
         m = re.search(r'(\d{4})/(\d{2})/(\d{2})', raw_time)
         if not m:
             continue
@@ -460,6 +468,7 @@ def get_all_daily_for_calendar(file_bytes):
             ml_count=r.get(ml_col)   if ml_col   else None,
             wml_count=r.get(wml_col) if wml_col  else None,
             ot_count=r.get(ot_col)   if ot_col   else None,
+            rl_count=r.get(rl_col)   if rl_col   else None,
         )
         classification = klas_raw[0] if klas_raw else None
 
@@ -938,13 +947,14 @@ def process_file(file_bytes):
     df = pd.read_excel(
         buf,
         sheet_name="General statistics and attendan",
-        header=4,
+        header=3,
         dtype={"Earliest": str, "Latest": str},
-    )
+    ).rename(columns={"Unnamed: 0": "Time_Date", "Unnamed: 1": "Name", "Unnamed: 2": "Account"})
 
     required = ["Name", "Account", "Rules", "Shift", "Earliest", "Latest",
                 "Attendance results", "Leave & Overtime Application",
                 "Number of absences(Count)"]
+
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise ValueError(f"Kolom tidak ditemukan: {missing}")
@@ -985,6 +995,7 @@ def process_file(file_bytes):
             ml_count=r.get(ml_col)   if ml_col   else None,
             wml_count=r.get(wml_col) if wml_col  else None,
             ot_count=r.get(ot_col)   if ot_col   else None,
+            rl_count=r.get(rl_col)   if rl_col   else None,
         ),
         axis=1,
     )
@@ -1008,7 +1019,7 @@ def process_file(file_bytes):
     pivot.columns.name = None
 
     ALL_STATUS_COLS = ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL", "WFA", "1/2 WFA", "WFS", "DW", "K", "Off",
-                       "HL", "ML", "WML", "OT"]
+                       "HL", "ML", "WML", "OT", "RL"]
     for col in ALL_STATUS_COLS:
         if col not in pivot.columns:
             pivot[col] = 0
@@ -1026,7 +1037,7 @@ def process_file(file_bytes):
                     "S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
                     "WFA", "1/2 WFA", "WFS",
                     "DW", "K", "Off",
-                    "HL", "ML", "WML", "OT"]].copy()
+                    "HL", "ML", "WML", "OT", "RL"]].copy()
 
     stats = {
         "total_rows": len(df),
@@ -1075,7 +1086,7 @@ def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
     n_date_cols = len(dates)
 
     # ── Baris 1: NO / KTP / NAME + tanggal (format 'd') ───────────────
-    for ci, header in enumerate(["NO", "KTP", "NAME"], 1):
+    for ci, header in enumerate(["NO", "KTP", "NAME", "ACCOUNT"], 1):
         c = ws.cell(1, ci)
         c.value     = header
         c.font      = BOLD
@@ -1085,7 +1096,7 @@ def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
     if dates:
         try:
             first_dt = _dt.date.fromisoformat(dates[0])
-            c = ws.cell(1, 4)
+            c = ws.cell(1, 5)
             c.value         = _dt.datetime(first_dt.year, first_dt.month, first_dt.day)
             c.number_format = 'd'
             c.font          = BOLD
@@ -1095,8 +1106,8 @@ def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
             pass
 
         for di in range(1, n_date_cols):
-            prev_col = get_column_letter(4 + di - 1)
-            c = ws.cell(1, 4 + di)
+            prev_col = get_column_letter(5 + di - 1)
+            c = ws.cell(1, 5 + di)
             c.value         = f"={prev_col}1+1"
             c.number_format = 'd'
             c.font          = BOLD
@@ -1111,8 +1122,8 @@ def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
         c.border    = BORDER
 
     for di in range(n_date_cols):
-        date_col = get_column_letter(4 + di)
-        c = ws.cell(2, 4 + di)
+        date_col = get_column_letter(5 + di)
+        c = ws.cell(2, 5 + di)
         c.value         = f"={date_col}1"
         c.number_format = 'ddd'
         c.font          = BOLD
@@ -1142,9 +1153,15 @@ def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
         c.alignment = CENTER
         c.border    = BORDER
 
+        c = ws.cell(er, 4)
+        c.value     = emp["Account"]
+        c.font      = PLAIN
+        c.alignment = CENTER
+        c.border    = BORDER
+
         acc = emp["Account"]
         for di, d in enumerate(dates):
-            ci = 4 + di
+            ci = 5 + di
             c  = ws.cell(er, ci)
             c.border    = BORDER
             c.alignment = CENTER
@@ -1163,8 +1180,9 @@ def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
     ws.column_dimensions["A"].width = 13.0
     ws.column_dimensions["B"].width = 25.7
     ws.column_dimensions["C"].width = 28.1
+    ws.column_dimensions["D"].width = 22.0
     for di in range(n_date_cols):
-        ws.column_dimensions[get_column_letter(4 + di)].width = 13.0
+        ws.column_dimensions[get_column_letter(5 + di)].width = 13.0
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -1189,6 +1207,7 @@ OPTIONAL_COLS_DEF = [
     ("ML",     "🤱 ML",           "Cuti Melahirkan"),
     ("WML",    "👶 WML",          "Cuti Istri Melahirkan"),
     ("OT",     "📝 OT",           "Cuti Lainnya"),
+    ("RL",     "📅 RL",           "Roster Leave"),
 ]
 OPTIONAL_KEYS   = [c[0] for c in OPTIONAL_COLS_DEF]
 OPTIONAL_LABELS = {c[0]: c[1] for c in OPTIONAL_COLS_DEF}
@@ -1215,7 +1234,9 @@ COL_CONFIG_ALL = {
     "ML"      : st.column_config.NumberColumn("🤱 ML",          format="%d", width="small"),
     "WML"     : st.column_config.NumberColumn("👶 WML",         format="%d", width="small"),
     "OT"      : st.column_config.NumberColumn("📝 OT",          format="%d", width="small"),
+    "RL"      : st.column_config.NumberColumn("📅 RL",          format="%d", width="small"),
 }
+
 
 
 # ──────────────────────────────────────────────────────────────
@@ -1428,6 +1449,11 @@ _LOGIC_HTML = (
     '<td style="padding:0.4rem 0.7rem;"><code>OT - Others - 其他(Day(s))</code></td>'
     '<td style="padding:0.4rem 0.7rem;">nilai = <b>1</b></td>'
     '</tr>'
+    '<tr style="background:#f1f5f9;">'
+    '<td style="padding:0.4rem 0.7rem;">📅 RL</td>'
+    '<td style="padding:0.4rem 0.7rem;"><code>RL - Roster Leave(Day(s))</code></td>'
+    '<td style="padding:0.4rem 0.7rem;">&ne; "--" / kosong / 0</td>'
+    '</tr>'
     '</table>'
 
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
@@ -1569,7 +1595,8 @@ _LOGIC_HTML = (
     '10. 🤱 Kolom ML-MaternityLeave &ne; "--"/kosong/0 &rarr; <b>ML</b> &mdash; selesai<br>'
     '11. 👶 Kolom WML-WifeMater = <b>1</b> &rarr; <b>WML</b> &mdash; selesai<br>'
     '12. 📝 Kolom OT - Others = <b>1</b> &rarr; <b>OT</b> &mdash; selesai<br>'
-    '13 &amp; 14. 🕐 Kolom Duration of late arrival <b>+</b> Duration of early departure<br>'
+    '13. 📅 Kolom RL-RosterLeave &ne; "--"/kosong/0 &rarr; <b>RL</b> &mdash; selesai<br>'
+    '14. 🕐 Kolom Duration of late arrival <b>+</b> Duration of early departure<br>'
     '&nbsp;&nbsp;&nbsp;(Keduanya dievaluasi — diambil yang paling berat)<br>'
     '&nbsp;&nbsp;&nbsp;+-- Salah satu &gt;120 mnt &rarr; <b>1/2 UL</b> &mdash; selesai<br>'
     '&nbsp;&nbsp;&nbsp;+-- Keduanya 1-120 mnt &nbsp;&rarr; <b>Late</b> &mdash; selesai<br>'
@@ -1764,10 +1791,10 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             df_raw = _pd.read_excel(
                 _buf,
                 sheet_name="General statistics and attendan",
-                header=4,
+                header=3,
                 dtype={"Earliest": str, "Latest": str},
-            )
-            for _val in df_raw["Time"].astype(str):
+            ).rename(columns={"Unnamed: 0": "Time_Date", "Unnamed: 1": "Name", "Unnamed: 2": "Account"})
+            for _val in df_raw["Time_Date"].astype(str):
                 _m = _re.search(r'(\d{4})/(\d{2})/(\d{2})', _val)
                 if _m:
                     _periode = f"{_m.group(1)}-{_m.group(2)}"
@@ -1788,24 +1815,40 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             _missed_punch_col  = _find_missed_punch_col(df_raw)
 
             df_raw["_tipe_shift"] = df_raw["Shift"].apply(classify_shift_type)
+            # Assign semua kolom di luar apply
+            _k_sick_col       = _find_ksick_col(df_raw)
+            _al_col           = _find_al_col(df_raw)
+            _ul_col           = _find_ul_col(df_raw)
+            _dur_late_col     = _find_duration_late_col(df_raw)
+            _dur_early_col    = _find_duration_early_col(df_raw)
+            _wfh_col          = _find_wfh_col(df_raw)
+            _offsite_col      = _find_offsite_col(df_raw)
+            _missed_punch_col = _find_missed_punch_col(df_raw)
+            _hl_col           = _find_hl_col(df_raw)
+            _ml_col           = _find_ml_col(df_raw)
+            _wml_col          = _find_wml_col(df_raw)
+            _ot_col           = _find_ot_col(df_raw)
+            _rl_col           = _find_rl_col(df_raw)
+
             df_raw["_status_klasifikasi"] = df_raw.apply(
                 lambda r: classify_str(
                     r["Earliest"], r["Shift"], r["Attendance results"],
                     latest_raw=r["Latest"],
                     leave_app=r.get("Leave & Overtime Application"),
                     absences_count=r.get("Number of absences(Count)"),
-                    k_sick_count=r.get(_k_sick_col)       if _k_sick_col    else None,
-                    al_count=r.get(_al_col)                if _al_col        else None,
-                    ul_count=r.get(_ul_col)                if _ul_col        else None,
-                    duration_late=r.get(_dur_late_col)     if _dur_late_col  else None,
-                    duration_early=r.get(_dur_early_col)   if _dur_early_col else None,
-                    wfh_count=r.get(_wfh_col)              if _wfh_col       else None,
-                    offsite_hour=r.get(_offsite_col)       if _offsite_col   else None,
+                    k_sick_count=r.get(_k_sick_col)         if _k_sick_col       else None,
+                    al_count=r.get(_al_col)                  if _al_col           else None,
+                    ul_count=r.get(_ul_col)                  if _ul_col           else None,
+                    duration_late=r.get(_dur_late_col)       if _dur_late_col     else None,
+                    duration_early=r.get(_dur_early_col)     if _dur_early_col    else None,
+                    wfh_count=r.get(_wfh_col)                if _wfh_col          else None,
+                    offsite_hour=r.get(_offsite_col)         if _offsite_col      else None,
                     missed_punch_count=r.get(_missed_punch_col) if _missed_punch_col else None,
-                    hl_count=r.get(_find_hl_col(df_raw))   if _find_hl_col(df_raw)   else None,
-                    ml_count=r.get(_find_ml_col(df_raw))   if _find_ml_col(df_raw)   else None,
-                    wml_count=r.get(_find_wml_col(df_raw)) if _find_wml_col(df_raw)  else None,
-                    ot_count=r.get(_find_ot_col(df_raw))   if _find_ot_col(df_raw)   else None,
+                    hl_count=r.get(_hl_col)                  if _hl_col           else None,
+                    ml_count=r.get(_ml_col)                  if _ml_col           else None,
+                    wml_count=r.get(_wml_col)                if _wml_col          else None,
+                    ot_count=r.get(_ot_col)                  if _ot_col           else None,
+                    rl_count=r.get(_rl_col)                  if _rl_col           else None,
                 ), axis=1,
             )
             save_periode(df_raw, _periode)
@@ -1828,11 +1871,11 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             "half_wfa": "1/2 WFA",
             "wfs": "WFS",
             "dw": "DW", "k_sick": "K", "off_count": "Off",
-            "hl": "HL", "ml": "ML", "wml": "WML", "ot": "OT",
+            "hl": "HL", "ml": "ML", "wml": "WML", "ot": "OT", "rl": "RL",
         })
         for col in ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
                     "WFA", "1/2 WFA", "WFS", "DW", "K", "Off",
-                    "HL", "ML", "WML", "OT"]:
+                    "HL", "ML", "WML", "OT", "RL"]:
             if col not in df_result.columns:
                 df_result[col] = 0
         file_bytes = None
@@ -1861,6 +1904,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     total_ml   = int(df_result["ML"].sum())  if "ML"  in df_result.columns else 0
     total_wml  = int(df_result["WML"].sum()) if "WML" in df_result.columns else 0
     total_ot   = int(df_result["OT"].sum())  if "OT"  in df_result.columns else 0
+    total_rl   = int(df_result["RL"].sum()) if "RL" in df_result.columns else 0
     total_e    = stats["employees"]
 
     st.markdown(f"""
@@ -1933,7 +1977,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     <div class="sub">Rest / Not scheduled</div>
   </div>
 </div>
-<div class="metric-row" style="margin-top:-1rem;grid-template-columns: repeat(4, 1fr);">
+<div class="metric-row" style="margin-top:-1rem;grid-template-columns: repeat(5, 1fr);">
   <div class="metric-card metric-hl">
     <div class="label"><span>💍</span> HL</div>
     <div class="value">{total_hl:,}</div>
@@ -1953,6 +1997,11 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     <div class="label"><span>📝</span> OT</div>
     <div class="value">{total_ot:,}</div>
     <div class="sub">Cuti Lainnya</div>
+  </div>
+  <div class="metric-card metric-rl">
+    <div class="label"><span>📅</span> RL</div>
+    <div class="value">{total_rl:,}</div>
+    <div class="sub">Roster Leave</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
