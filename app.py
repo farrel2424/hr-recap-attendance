@@ -2126,137 +2126,166 @@ if not st.session_state.get("show_upload_panel", False) and uploaded is None and
         unsafe_allow_html=True,
     )
 
+
+
+        # ── Table header (HTML) ───────────────────────────────
     if periodes_tersedia:
 
-        # Palet warna per baris — format: (left_border, num_bg, num_text, badge_bg, badge_text)
-        _PAL = [
-            ("#3b82f6", "#1e3a5f", "#93c5fd", "#172554", "#bfdbfe"),
-            ("#a855f7", "#3b0764", "#e9d5ff", "#2e1065", "#d8b4fe"),
-            ("#0ea5e9", "#082f49", "#7dd3fc", "#0c4a6e", "#bae6fd"),
-            ("#10b981", "#022c22", "#6ee7b7", "#064e3b", "#a7f3d0"),
-            ("#f59e0b", "#451a03", "#fcd34d", "#3b1400", "#fde68a"),
-            ("#ef4444", "#450a0a", "#fca5a5", "#3b0000", "#fecaca"),
-            ("#6366f1", "#1e1b4b", "#a5b4fc", "#1e1b4b", "#c7d2fe"),
+        _ACCENTS = [
+            ("#6366f1", "#ede9fe", "#4c1d95"),
+            ("#3b82f6", "#dbeafe", "#1e3a8a"),
+            ("#0ea5e9", "#e0f2fe", "#0c4a6e"),
+            ("#10b981", "#d1fae5", "#064e3b"),
+            ("#f59e0b", "#fef3c7", "#451a03"),
+            ("#ef4444", "#fee2e2", "#450a0a"),
+            ("#a855f7", "#f3e8ff", "#3b0764"),
         ]
 
+        st.markdown("""
+<style>
+.pt-head {
+    display: grid;
+    grid-template-columns: 1fr 130px 170px 170px;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 12px 12px 0 0;
+    border-bottom: 2px solid var(--border-strong, #cbd5e1);
+    background: var(--table-header-bg, #f1f5f9);
+    padding: 0 1.2rem;
+    margin-bottom: 0;
+}
+.pt-head-cell {
+    padding: .65rem .5rem;
+    font-size: .67rem; font-weight: 700;
+    color: var(--text-faint, #94a3b8);
+    text-transform: uppercase; letter-spacing: .09em;
+}
+.pt-row {
+    display: grid;
+    grid-template-columns: 1fr 130px 170px 170px;
+    padding: .9rem 1.2rem;
+    border-left: 1px solid var(--border-color, #e2e8f0);
+    border-right: 1px solid var(--border-color, #e2e8f0);
+    border-bottom: 1px solid var(--border-color, #e2e8f0);
+    align-items: center;
+    cursor: pointer;
+    transition: background .13s;
+    position: relative;
+    box-sizing: border-box;
+    background: var(--bg-primary, #fff);
+}
+.pt-row:hover { background: var(--table-hover, #f0f7ff); }
+.pt-row::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 12%; bottom: 12%;
+    width: 3px; border-radius: 0 3px 3px 0;
+    background: var(--pt-accent, #6366f1);
+    opacity: .45; transition: opacity .13s;
+}
+.pt-row:hover::before { opacity: 1; }
+.pt-month-name { font-weight: 700; font-size: .92rem; color: var(--text-primary, #0f172a); }
+.pt-year { font-size: .8rem; color: var(--text-faint, #94a3b8); margin-left: .35rem; font-weight: 400; }
+.pt-sub { font-size: .7rem; color: var(--text-faint, #94a3b8); margin-top: .1rem; }
+.pt-badge {
+    display: inline-flex; align-items: center;
+    padding: .22rem .75rem; border-radius: 20px;
+    font-family: monospace; font-size: .74rem; font-weight: 700;
+    letter-spacing: .04em; white-space: nowrap;
+}
+.pt-muted { font-size: .81rem; color: var(--text-faint, #94a3b8); }
+.pt-footer {
+    padding: .6rem 1.2rem;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-top: none;
+    border-radius: 0 0 12px 12px;
+    background: var(--bg-secondary, #f8fafc);
+    font-size: .75rem;
+    color: var(--text-faint, #94a3b8);
+    display: flex; align-items: center; gap: .5rem;
+    margin-bottom: 1rem;
+}
+
+/* ── Transparent overlay button — sits on top of the pt-row above it ── */
+.element-container:has(.pt-row) + .element-container [data-testid="stButton"] button {
+    margin-top: -72px !important;
+    height: 68px !important;
+    background: transparent !important;
+    border: none !important;
+    color: transparent !important;
+    position: relative !important;
+    z-index: 10 !important;
+    cursor: pointer !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    width: 100% !important;
+    padding: 0 !important;
+}
+.element-container:has(.pt-row) + .element-container [data-testid="stButton"] button:hover,
+.element-container:has(.pt-row) + .element-container [data-testid="stButton"] button:focus {
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+    border: none !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+        # ── Header ───────────────────────────────────────────
+        st.markdown(
+            '<div class="pt-head">'
+            '<div class="pt-head-cell">Month</div>'
+            '<div class="pt-head-cell">Periode</div>'
+            '<div class="pt-head-cell">Upload Date</div>'
+            '<div class="pt-head-cell">Created By</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── Rows ─────────────────────────────────────────────
         for _i, _p in enumerate(periodes_tersedia):
             try:
                 _dt_obj     = _dt_mod.datetime.strptime(_p, "%Y-%m")
                 _month_name = _dt_obj.strftime("%B")
                 _year_name  = _dt_obj.strftime("%Y")
-                _month_num  = _dt_obj.strftime("%m")
             except Exception:
                 _month_name = _p
                 _year_name  = ""
-                _month_num  = str(_i + 1)
 
-            _border, _nb, _nt, _bb, _bt = _PAL[_i % len(_PAL)]
+            _accent, _badge_bg, _badge_fg = _ACCENTS[_i % len(_ACCENTS)]
 
-            # Satu baris = kolom info (HTML) + kolom tombol (Streamlit)
-            _col_info, _col_btn = st.columns([8.5, 1.5], gap="small")
+            _col_row, _col_btn = st.columns([11, 1], gap="small")
 
-            with _col_info:
+            with _col_row:
                 st.markdown(
-                    f'<div style="'
-                    f'background:var(--bg-secondary);'
-                    f'border:1px solid var(--border-color);'
-                    f'border-left:4px solid {_border};'
-                    f'border-radius:14px;'
-                    f'padding:.95rem 1.4rem;'
-                    f'margin-bottom:.5rem;'
-                    f'display:flex;align-items:center;gap:1.2rem;'
-                    f'transition:border-color .15s;'
-                    f'">'
-
-                    # ── Lingkaran nomor ──
-                    f'<div style="'
-                    f'min-width:38px;height:38px;'
-                    f'background:{_nb};'
-                    f'border-radius:50%;'
-                    f'display:flex;align-items:center;justify-content:center;'
-                    f'font-size:.82rem;font-weight:700;'
-                    f'color:{_nt};'
-                    f'font-family:monospace;'
-                    f'flex-shrink:0;'
-                    f'">{_i + 1}</div>'
-
-                    # ── Nama bulan + tahun ──
-                    f'<div style="flex:1;min-width:0;">'
-                    f'<div style="'
-                    f'font-weight:700;font-size:.98rem;'
-                    f'color:var(--text-primary);'
-                    f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
-                    f'">{_month_name}'
-                    f'<span style="'
-                    f'font-weight:400;font-size:.85rem;'
-                    f'color:var(--text-muted);margin-left:.4rem;'
-                    f'">{_year_name}</span>'
+                    f'<div class="pt-row" style="--pt-accent:{_accent};">'
+                    f'<div>'
+                    f'<div><span class="pt-month-name">{_month_name}</span>'
+                    f'<span class="pt-year">{_year_name}</span></div>'
+                    f'<div class="pt-sub">Periode absensi bulanan</div>'
                     f'</div>'
-                    f'<div style="'
-                    f'font-size:.72rem;color:var(--text-faint);margin-top:.1rem;'
-                    f'">Periode absensi bulanan</div>'
-                    f'</div>'
-
-                    # ── Badge periode ──
-                    f'<div style="'
-                    f'background:{_bb};'
-                    f'color:{_bt};'
-                    f'padding:.28rem .85rem;'
-                    f'border-radius:20px;'
-                    f'font-family:monospace;font-size:.8rem;font-weight:700;'
-                    f'letter-spacing:.04em;'
-                    f'white-space:nowrap;'
-                    f'border:1px solid {_border}44;'
-                    f'">{_p}</div>'
-
-                    # ── Upload date ──
-                    f'<div style="'
-                    f'min-width:110px;text-align:center;'
-                    f'color:var(--text-faint);font-size:.8rem;'
-                    f'">—</div>'
-
-                    # ── Created by ──
-                    f'<div style="'
-                    f'min-width:110px;text-align:center;'
-                    f'color:var(--text-faint);font-size:.8rem;'
-                    f'">—</div>'
-
+                    f'<span class="pt-badge" style="background:{_badge_bg};color:{_badge_fg};'
+                    f'border:1px solid {_accent}55;">{_p}</span>'
+                    f'<span class="pt-muted">—</span>'
+                    f'<span class="pt-muted">—</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
 
             with _col_btn:
-                # Spasi vertikal agar tombol sejajar dengan card
-                st.markdown(
-                    '<div style="height:.3rem"></div>',
-                    unsafe_allow_html=True,
-                )
-                if st.button(
-                    "📂 Buka",
-                    key=f"open_{_p}",
-                    use_container_width=True,
-                ):
+                if st.button("›", key=f"open_{_p}", use_container_width=True):
                     st.session_state.show_upload_panel = True
                     st.session_state.show_export_panel = False
                     st.session_state["_auto_periode"]  = _p
                     st.rerun()
 
-        # ── Footer ───────────────────────────────────────────────────
+        # ── Footer ───────────────────────────────────────────
         st.markdown(
-            f'<div style="'
-            f'margin-top:.4rem;padding:.6rem .2rem;'
-            f'border-top:1px solid var(--border-color);'
-            f'display:flex;align-items:center;gap:.5rem;'
-            f'font-size:.76rem;color:var(--text-faint);'
-            f'">'
-            f'<span style="'
-            f'display:inline-block;width:7px;height:7px;'
-            f'border-radius:50%;background:#6366f1;'
-            f'"></span>'
-            f'{len(periodes_tersedia)} periode tersimpan di database'
-            f'&nbsp;&nbsp;·&nbsp;&nbsp;'
-            f'Klik <b style="color:var(--text-muted);">📥 Export</b> '
-            f'untuk mengunduh tanpa membuka periode'
+            f'<div class="pt-footer">'
+            f'<span style="width:7px;height:7px;border-radius:50%;'
+            f'background:#6366f1;display:inline-block;flex-shrink:0;"></span>'
+            f'<b>{len(periodes_tersedia)} periode</b> tersimpan di database'
+            f'&nbsp;·&nbsp;'
+            f'Klik <b>📥 Export</b> untuk mengunduh tanpa membuka periode'
             f'</div>',
             unsafe_allow_html=True,
         )
