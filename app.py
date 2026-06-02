@@ -1127,8 +1127,7 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
 
     st.markdown("<div style='margin-top:1.5rem'></div>", unsafe_allow_html=True)
     if st.button("❌ Tutup Rincian", use_container_width=True, type="secondary", key=f"btn_close_dlg_{account}"):
-        st.session_state.dialog_target = None
-        st.session_state.dialog_emp    = None
+        st.session_state.dialog_target = "closed"
         st.rerun()
 
 
@@ -2731,7 +2730,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
         on_select="rerun",
         selection_mode="single-row",
         column_config={k: v for k, v in COL_CONFIG_ALL.items() if k in visible_cols},
-        key=f"df_summary_{st.session_state.df_key_suffix}",
+        key="df_summary_table",
     )
 
     current_periode = st.session_state.get("current_periode") or _periode
@@ -2747,10 +2746,15 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                 "rules"  : emp["Rules"],
                 "periode": current_periode,
             }
-            st.session_state.dialog_target = "detail"
-            st.session_state.dialog_emp    = new_emp
-            st.session_state.df_key_suffix += 1
-            st.rerun()
+            if st.session_state.dialog_target == "closed" and st.session_state.dialog_emp == new_emp:
+                pass
+            elif st.session_state.dialog_emp != new_emp or st.session_state.dialog_target != "detail":
+                st.session_state.dialog_target = "detail"
+                st.session_state.dialog_emp    = new_emp
+                st.rerun()
+    else:
+        st.session_state.dialog_target = None
+        st.session_state.dialog_emp    = None
 
     if st.session_state.dialog_target == "logic":
         st.session_state.dialog_target = None
