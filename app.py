@@ -41,6 +41,8 @@ if "dialog_emp" not in st.session_state:
     st.session_state.dialog_emp = None
 if "current_periode" not in st.session_state:
     st.session_state.current_periode = None
+if "show_upload_panel" not in st.session_state:
+    st.session_state.show_upload_panel = False
 
 st.markdown("""
 <style>
@@ -48,11 +50,67 @@ st.markdown("""
 
 html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 
+/* ── Light/Dark mode CSS variables ── */
+:root {
+    --bg-primary:      #ffffff;
+    --bg-secondary:    #f8fafc;
+    --bg-tertiary:     #f1f5f9;
+    --border-color:    #e2e8f0;
+    --border-strong:   #cbd5e1;
+    --text-primary:    #0f172a;
+    --text-secondary:  #334155;
+    --text-muted:      #64748b;
+    --text-faint:      #94a3b8;
+    --shadow-sm:       0 1px 3px rgba(0,0,0,0.08);
+    --shadow-md:       0 4px 12px rgba(0,0,0,0.10);
+    --badge-bg:        #eff6ff;
+    --badge-color:     #1d4ed8;
+    --table-hover:     #f0f7ff;
+    --table-header-bg: #f1f5f9;
+    --btn-upload-bg:   linear-gradient(135deg, #dc2626, #ef4444);
+    --btn-upload-hover:#b91c1c;
+}
+
+[data-theme="dark"],
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-primary:      #0f172a;
+        --bg-secondary:    #1e293b;
+        --bg-tertiary:     #334155;
+        --border-color:    #334155;
+        --border-strong:   #475569;
+        --text-primary:    #f1f5f9;
+        --text-secondary:  #cbd5e1;
+        --text-muted:      #94a3b8;
+        --text-faint:      #64748b;
+        --shadow-sm:       0 1px 3px rgba(0,0,0,0.3);
+        --shadow-md:       0 4px 12px rgba(0,0,0,0.4);
+        --badge-bg:        #1e3a5f;
+        --badge-color:     #7dd3fc;
+        --table-hover:     #1e3a5f;
+        --table-header-bg: #1e293b;
+    }
+}
+
+/* Auto-detect Streamlit dark mode */
+[data-testid="stAppViewContainer"][class*="dark"] {
+    --bg-primary:      #0f172a;
+    --bg-secondary:    #1e293b;
+    --bg-tertiary:     #334155;
+    --border-color:    #334155;
+    --border-strong:   #475569;
+    --text-primary:    #f1f5f9;
+    --text-secondary:  #cbd5e1;
+    --text-muted:      #94a3b8;
+    --text-faint:      #64748b;
+}
+
 .main .block-container { padding: 2rem 3rem 4rem; max-width: 1400px; }
 
+/* ── App Header ── */
 .app-header {
     background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
-    border-radius: 16px; padding: 2.5rem 3rem; margin-bottom: 2.5rem;
+    border-radius: 16px; padding: 2.5rem 3rem; margin-bottom: 1.5rem;
     position: relative; overflow: hidden;
 }
 .app-header::before {
@@ -65,13 +123,102 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     color: #ffffff; font-size: 2.1rem; font-weight: 700;
     margin: 0 0 0.3rem 0; letter-spacing: -0.03em;
 }
-.app-header p { color: rgba(255,255,255,0.60); font-size: 0.95rem; margin: 0; }
+.app-header p { color: rgba(255,255,255,0.75); font-size: 0.95rem; margin: 0; }
 .badge {
-    display: inline-block; background: rgba(255,255,255,0.12); color: #7dd3fc;
+    display: inline-block; background: rgba(255,255,255,0.15); color: #7dd3fc;
     padding: 0.2rem 0.7rem; border-radius: 20px; font-size: 0.78rem;
     font-family: 'DM Mono', monospace; margin-bottom: 1rem; letter-spacing: 0.05em;
 }
 
+/* ── Top Action Bar ── */
+.top-action-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    margin-bottom: 1.4rem;
+    padding: 0.6rem 0;
+}
+
+/* ── Periode Table ── */
+.periode-table-wrapper {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 1.5rem;
+}
+.periode-table-header {
+    display: grid;
+    grid-template-columns: 52px 1fr 130px 180px 180px 110px;
+    background: var(--table-header-bg);
+    border-bottom: 2px solid var(--border-strong);
+    padding: 0 1rem;
+}
+.periode-table-header-cell {
+    padding: 0.75rem 0.5rem;
+    font-size: 0.70rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+}
+.periode-table-row {
+    display: grid;
+    grid-template-columns: 52px 1fr 130px 180px 180px 110px;
+    padding: 0 1rem;
+    border-bottom: 1px solid var(--border-color);
+    align-items: center;
+    transition: background 0.15s;
+}
+.periode-table-row:last-child { border-bottom: none; }
+.periode-table-row:hover { background: var(--table-hover); }
+.periode-table-cell {
+    padding: 0.85rem 0.5rem;
+    font-size: 0.87rem;
+    color: var(--text-secondary);
+}
+.periode-table-cell.no    { color: var(--text-faint); font-size: 0.8rem; }
+.periode-table-cell.month { font-weight: 700; color: var(--text-primary); font-size: 0.9rem; }
+.periode-badge {
+    display: inline-block;
+    background: var(--badge-bg);
+    color: var(--badge-color);
+    padding: 0.2rem 0.65rem;
+    border-radius: 20px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid var(--badge-color);
+}
+.empty-state {
+    text-align: center; padding: 4rem 2rem;
+    color: var(--text-faint);
+}
+.empty-state .icon { font-size: 3.5rem; margin-bottom: 1rem; }
+.empty-state .title {
+    font-size: 1.1rem; font-weight: 600;
+    color: var(--text-muted); margin-bottom: 0.5rem;
+}
+.empty-state .subtitle { font-size: 0.9rem; color: var(--text-faint); }
+
+/* ── Upload Panel ── */
+.upload-panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.4rem 1.6rem;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--shadow-sm);
+}
+.upload-panel-title {
+    font-weight: 700; font-size: 0.95rem;
+    color: var(--text-primary); margin-bottom: 1rem;
+    display: flex; align-items: center; gap: 0.4rem;
+}
+
+/* ── Metric Cards ── */
 .metric-row {
     display: grid; grid-template-columns: repeat(5, 1fr);
     gap: 1.25rem; margin: 2rem 0 2.5rem;
@@ -84,7 +231,6 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     content: ''; position: absolute; bottom: -18px; right: -18px;
     width: 70px; height: 70px; border-radius: 50%; opacity: 0.07; background: currentColor;
 }
-
 .metric-shift    { background: #f0fdf4; border-left: 4px solid #22c55e; }
 .metric-late     { background: #fffbeb; border-left: 4px solid #f59e0b; }
 .metric-k        { background: #fef2f2; border-left: 4px solid #ef4444; }
@@ -133,6 +279,7 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .metric-rl       .value { color: #15803d; }
 .metric-card .sub { font-size: 0.72rem; color: #94a3b8; font-weight: 400; margin-top: 0.35rem; }
 
+/* ── Download Button ── */
 .stDownloadButton button {
     background: linear-gradient(135deg, #1e40af, #3b82f6) !important;
     color: white !important; border: none !important;
@@ -146,7 +293,7 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 }
 
 .section-title {
-    font-size: 1rem; font-weight: 700; color: #1e293b;
+    font-size: 1rem; font-weight: 700; color: var(--text-primary);
     letter-spacing: -0.01em; margin: 0 0 1rem 0;
     display: flex; align-items: center; gap: 0.5rem;
 }
@@ -1654,6 +1801,11 @@ _LOGIC_HTML = (
     '- <b>📝 OT</b> (Others): kolom <code>OT - Others - 其他(Day(s))</code> = 1 → label <code>OT</code>, ekspor warna abu-abu #D9D9D9<br>'
     '- Keempat label diperiksa <b>setelah WFA/½WFA</b> (langkah 9–12) dan <b>sebelum cek keterlambatan</b> (langkah 13–14)<br>'
     '- Bersifat <b>standalone</b> — karyawan dengan HL/ML/WML/OT tidak dikenai cek durasi keterlambatan<br><br>'
+    '<b>6. 🖥️ Peningkatan UI Default View (Update Terbaru):</b><br>'
+    '- <b>Light/Dark Mode</b>: kontras otomatis via CSS variables — teks, border, badge, dan background menyesuaikan tema OS<br>'
+    '- <b>Tombol Upload</b>: digeser ke pojok kanan atas bersama tombol Logic, menggunakan layout kolom [5,1]<br>'
+    '- <b>Tombol Back</b>: muncul di halaman rekap untuk kembali ke tabel riwayat periode<br>'
+    '- <b>Tabel Riwayat</b>: kolom No. | Month | Periode | Upload Date | Created By | Aksi (Buka)<br><br>'
     '</div>'
 
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
@@ -1755,38 +1907,340 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-upload_col, btn_col = st.columns([5, 1], gap="medium")
-
-with upload_col:
-    st.markdown('<p class="section-title">📂 Upload File Excel</p>', unsafe_allow_html=True)
-    periodes_tersedia = get_periodes()
-    if periodes_tersedia:
-        st.markdown("**🗄️ Atau pilih periode yang sudah tersimpan:**")
-        periode_dipilih = st.selectbox(
-            label="",
-            options=["- Upload file baru -"] + periodes_tersedia,
-            label_visibility="collapsed",
-        )
-    else:
-        periode_dipilih = "- Upload file baru -"
-
-    uploaded = st.file_uploader(
-        label="",
-        type=["xlsx", "xls"],
-        label_visibility="collapsed",
-        help="File Excel dari sistem absensi. Sheet 'General statistics and attendan' harus ada.",
-    )
-
-with btn_col:
-    st.markdown("<div style='margin-top:2.1rem'></div>", unsafe_allow_html=True)
-    if st.button("📋 Logic\nKlasifikasi", use_container_width=True, type="secondary"):
-        st.session_state.dialog_target = "logic"
-        st.session_state.dialog_emp    = None
-        st.rerun()
+# ── Top Action Bar: rata kanan ───────────────────────────────
+_spacer, _action_col = st.columns([5, 1], gap="small")
+with _action_col:
+    _ab1, _ab2 = st.columns(2, gap="small")
+    with _ab1:
+        if st.button("📤 Upload", use_container_width=True, type="primary", key="btn_upload_top"):
+            st.session_state.show_upload_panel = not st.session_state.get("show_upload_panel", False)
+            st.session_state.pop("_auto_periode", None)
+            st.rerun()
+    with _ab2:
+        if st.button("📋 Logic", use_container_width=True, type="secondary", key="btn_logic_top"):
+            st.session_state.dialog_target = "logic"
+            st.session_state.dialog_emp    = None
+            st.rerun()
 
 if st.session_state.dialog_target == "logic":
     st.session_state.dialog_target = None
     show_logic_dialog()
+
+# ── Ambil daftar periode ──────────────────────────────────────
+periodes_tersedia = get_periodes()
+
+# ── Inisialisasi variabel default ────────────────────────────
+uploaded        = None
+periode_dipilih = "- Upload file baru -"
+_NEW_PERIODE_SENTINEL = "- Upload file baru -"
+
+# ── Panel Upload (muncul saat tombol Upload diklik) ───────────
+if st.session_state.get("show_upload_panel", False):
+    st.markdown(
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;'
+        'padding:1.4rem 1.6rem;margin-bottom:1.5rem;">'
+        '<div style="font-weight:700;font-size:0.95rem;color:#0f172a;margin-bottom:1rem;">'
+        '📂 Upload File Excel Absensi</div>',
+        unsafe_allow_html=True,
+    )
+    _up1, _up2 = st.columns([3, 2], gap="medium")
+    with _up1:
+        uploaded = st.file_uploader(
+            label="Pilih file Excel absensi (.xlsx / .xls)",
+            type=["xlsx", "xls"],
+            help="Sheet 'General statistics and attendan' harus ada.",
+            key="main_uploader",
+        )
+    with _up2:
+        if periodes_tersedia:
+            st.markdown(
+                '<div style="font-size:0.82rem;font-weight:600;color:#334155;'
+                'margin-bottom:0.4rem;">🗄️ Atau pilih periode tersimpan:</div>',
+                unsafe_allow_html=True,
+            )
+            periode_dipilih = st.selectbox(
+                label="Periode",
+                options=[_NEW_PERIODE_SENTINEL] + periodes_tersedia,
+                label_visibility="collapsed",
+                key="periode_select",
+            )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ── Handle auto-pilih periode dari tombol "Buka" di tabel ────
+if st.session_state.get("_auto_periode") and periode_dipilih == _NEW_PERIODE_SENTINEL:
+    periode_dipilih = st.session_state.pop("_auto_periode")
+
+# ── Default View: Tabel Riwayat Periode ──────────────────────
+if not st.session_state.get("show_upload_panel", False) and uploaded is None and periode_dipilih == _NEW_PERIODE_SENTINEL:
+    import datetime as _dt_mod
+
+    st.markdown(
+        '<p class="section-title">🗂️ Riwayat Periode Absensi</p>',
+        unsafe_allow_html=True,
+    )
+
+    if periodes_tersedia:
+        # ── Header kolom tabel ────────────────────────────────
+        _h = st.columns([0.45, 2.2, 1.1, 1.6, 1.6, 1.1])
+        _headers = ["No.", "Month", "Periode", "Upload Date", "Created By", ""]
+        _hstyle = (
+            "font-size:0.70rem;font-weight:700;color:#475569;"
+            "text-transform:uppercase;letter-spacing:.07em;"
+            "padding:.65rem .4rem .55rem;border-bottom:2px solid #e2e8f0;"
+        )
+        for _hc, _ht in zip(_h, _headers):
+            with _hc:
+                st.markdown(f'<div style="{_hstyle}">{_ht}</div>', unsafe_allow_html=True)
+
+        # ── Baris data ────────────────────────────────────────
+        for _i, _p in enumerate(periodes_tersedia):
+            try:
+                _month_label = _dt_mod.datetime.strptime(_p, "%Y-%m").strftime("%B %Y")
+            except Exception:
+                _month_label = _p
+
+            _bg = "#f8fafc" if _i % 2 == 0 else "#ffffff"
+            _cell = (
+                f"padding:.8rem .4rem;font-size:.87rem;"
+                f"border-bottom:1px solid #f1f5f9;background:{_bg};"
+            )
+            _r = st.columns([0.45, 2.2, 1.1, 1.6, 1.6, 1.1])
+            with _r[0]:
+                st.markdown(
+                    f'<div style="{_cell}color:#94a3b8;font-size:.8rem;">{_i+1}</div>',
+                    unsafe_allow_html=True,
+                )
+            with _r[1]:
+                st.markdown(
+                    f'<div style="{_cell}font-weight:700;color:#0f172a;font-size:.9rem;">'
+                    f'{_month_label}</div>',
+                    unsafe_allow_html=True,
+                )
+            with _r[2]:
+                st.markdown(
+                    f'<div style="{_cell}">'
+                    f'<span style="background:#eff6ff;color:#1d4ed8;padding:.18rem .6rem;'
+                    f'border-radius:20px;font-family:monospace;font-size:.75rem;'
+                    f'font-weight:600;border:1px solid #bfdbfe;">{_p}</span></div>',
+                    unsafe_allow_html=True,
+                )
+            with _r[3]:
+                st.markdown(
+                    f'<div style="{_cell}color:#94a3b8;">—</div>',
+                    unsafe_allow_html=True,
+                )
+            with _r[4]:
+                st.markdown(
+                    f'<div style="{_cell}color:#94a3b8;">—</div>',
+                    unsafe_allow_html=True,
+                )
+            with _r[5]:
+                if st.button("📂 Buka", key=f"open_{_p}", use_container_width=True):
+                    st.session_state.show_upload_panel = True
+                    st.session_state["_auto_periode"]  = _p
+                    st.rerun()
+
+        st.caption(f"🗄️ {len(periodes_tersedia)} periode tersimpan di database")
+
+    else:
+        st.markdown(
+            '<div style="text-align:center;padding:4rem 2rem;color:#94a3b8;">'
+            '<div style="font-size:3.5rem;margin-bottom:1rem;">📁</div>'
+            '<div style="font-size:1.1rem;font-weight:600;color:#64748b;margin-bottom:0.5rem;">'
+            'Belum ada periode tersimpan</div>'
+            '<div style="font-size:0.9rem;">Klik <b>📤 Upload</b> di pojok kanan atas untuk mulai</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+    st.stop()
+
+# ── Panel Upload (muncul saat tombol Upload diklik) ───────────
+periodes_tersedia = get_periodes()
+
+if st.session_state.get("show_upload_panel", False):
+    with st.container():
+        st.markdown(
+            '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;'
+            'padding:1.2rem 1.5rem;margin-bottom:1.5rem;">'
+            '<div style="font-weight:700;color:#1e293b;margin-bottom:0.8rem;">📂 Upload File Excel Absensi</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        _up_col1, _up_col2 = st.columns([3, 2])
+        with _up_col1:
+            uploaded = st.file_uploader(
+                label="Pilih file Excel absensi",
+                type=["xlsx", "xls"],
+                help="Sheet 'General statistics and attendan' harus ada.",
+                key="main_uploader",
+            )
+        with _up_col2:
+            if periodes_tersedia:
+                st.markdown("**🗄️ Atau pilih periode yang sudah tersimpan:**")
+                periode_dipilih = st.selectbox(
+                    label="Periode tersimpan",
+                    options=["- Upload file baru -"] + periodes_tersedia,
+                    label_visibility="collapsed",
+                    key="periode_select",
+                )
+            else:
+                periode_dipilih = "- Upload file baru -"
+else:
+    uploaded        = None
+    periode_dipilih = "- Upload file baru -"
+
+# ── Default View: Tabel Periode (jika belum upload & panel tertutup) ──
+_NEW_PERIODE_SENTINEL = "- Upload file baru -"
+
+if not st.session_state.get("show_upload_panel", False) and uploaded is None and periode_dipilih == _NEW_PERIODE_SENTINEL:
+    # Tabel daftar periode yang sudah tersimpan
+    st.markdown(
+        '<div style="display:flex;align-items:center;justify-content:space-between;'
+        'margin-bottom:1rem;">'
+        '<p class="section-title" style="margin:0;">🗂️ Riwayat Periode Absensi</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    if periodes_tersedia:
+        import datetime as _dt_mod
+
+        # Bangun tabel tampilan
+        _table_rows = []
+        for _p in periodes_tersedia:
+            # _p format: "YYYY-MM"
+            try:
+                _dt_obj  = _dt_mod.datetime.strptime(_p, "%Y-%m")
+                _month_label = _dt_obj.strftime("%B %Y")          # "January 2025"
+            except Exception:
+                _month_label = _p
+
+            _table_rows.append({
+                "Month"      : _month_label,
+                "Periode ID" : _p,
+                "Upload Date": "—",    # tidak disimpan di DB saat ini
+                "Created By" : "—",    # belum ada kolom user di DB
+                "Action"     : _p,
+            })
+
+        import pandas as _pd_tbl
+        _df_tbl = _pd_tbl.DataFrame(_table_rows)
+
+        # Render tabel dengan tombol Buka per baris
+        st.markdown("""
+        <style>
+        .periode-table {
+            width: 100%; border-collapse: collapse;
+            font-size: 0.88rem; margin-bottom: 1.5rem;
+        }
+        .periode-table th {
+            background: #f1f5f9; color: #475569;
+            font-weight: 700; text-transform: uppercase;
+            font-size: 0.72rem; letter-spacing: 0.06em;
+            padding: 0.7rem 1rem; border-bottom: 2px solid #e2e8f0;
+            text-align: left;
+        }
+        .periode-table td {
+            padding: 0.75rem 1rem; border-bottom: 1px solid #f1f5f9;
+            color: #334155; vertical-align: middle;
+        }
+        .periode-table tr:hover td { background: #f8fafc; }
+        .badge-periode {
+            display: inline-block; background: #eff6ff; color: #1d4ed8;
+            padding: 0.15rem 0.6rem; border-radius: 20px;
+            font-family: 'DM Mono', monospace; font-size: 0.75rem;
+            font-weight: 500;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # Header tabel
+        _col_no, _col_month, _col_pid, _col_upd, _col_by, _col_act = st.columns(
+            [0.5, 2.5, 1.5, 2, 2, 1.5]
+        )
+        with _col_no:
+            st.markdown('<div style="font-size:0.72rem;font-weight:700;color:#475569;'
+                        'text-transform:uppercase;letter-spacing:.06em;padding:.4rem 0;">No.</div>',
+                        unsafe_allow_html=True)
+        with _col_month:
+            st.markdown('<div style="font-size:0.72rem;font-weight:700;color:#475569;'
+                        'text-transform:uppercase;letter-spacing:.06em;padding:.4rem 0;">Month</div>',
+                        unsafe_allow_html=True)
+        with _col_pid:
+            st.markdown('<div style="font-size:0.72rem;font-weight:700;color:#475569;'
+                        'text-transform:uppercase;letter-spacing:.06em;padding:.4rem 0;">Periode</div>',
+                        unsafe_allow_html=True)
+        with _col_upd:
+            st.markdown('<div style="font-size:0.72rem;font-weight:700;color:#475569;'
+                        'text-transform:uppercase;letter-spacing:.06em;padding:.4rem 0;">Upload Date</div>',
+                        unsafe_allow_html=True)
+        with _col_by:
+            st.markdown('<div style="font-size:0.72rem;font-weight:700;color:#475569;'
+                        'text-transform:uppercase;letter-spacing:.06em;padding:.4rem 0;">Created By</div>',
+                        unsafe_allow_html=True)
+        with _col_act:
+            st.markdown('<div style="font-size:0.72rem;font-weight:700;color:#475569;'
+                        'text-transform:uppercase;letter-spacing:.06em;padding:.4rem 0;"></div>',
+                        unsafe_allow_html=True)
+
+        st.markdown('<hr style="border-color:#e2e8f0;margin:0 0 0.2rem">', unsafe_allow_html=True)
+
+        for _i, _row in enumerate(_table_rows):
+            _c_no, _c_month, _c_pid, _c_upd, _c_by, _c_act = st.columns(
+                [0.5, 2.5, 1.5, 2, 2, 1.5]
+            )
+            with _c_no:
+                st.markdown(
+                    f'<div style="padding:.45rem 0;color:#94a3b8;font-size:0.82rem;">{_i+1}</div>',
+                    unsafe_allow_html=True,
+                )
+            with _c_month:
+                st.markdown(
+                    f'<div style="padding:.45rem 0;font-weight:600;color:#1e293b;">'
+                    f'{_row["Month"]}</div>',
+                    unsafe_allow_html=True,
+                )
+            with _c_pid:
+                st.markdown(
+                    f'<div style="padding:.45rem 0;">'
+                    f'<span class="badge-periode">{_row["Periode ID"]}</span></div>',
+                    unsafe_allow_html=True,
+                )
+            with _c_upd:
+                st.markdown(
+                    f'<div style="padding:.45rem 0;color:#64748b;">{_row["Upload Date"]}</div>',
+                    unsafe_allow_html=True,
+                )
+            with _c_by:
+                st.markdown(
+                    f'<div style="padding:.45rem 0;color:#64748b;">{_row["Created By"]}</div>',
+                    unsafe_allow_html=True,
+                )
+            with _c_act:
+                if st.button("📂 Buka", key=f"open_periode_{_row['Periode ID']}", use_container_width=True):
+                    st.session_state.show_upload_panel = True
+                    st.session_state["_auto_periode"]  = _row["Periode ID"]
+                    st.rerun()
+
+        st.caption(f"🗄️ {len(periodes_tersedia)} periode tersimpan di database")
+
+    else:
+        # Belum ada data
+        st.markdown(
+            '<div style="text-align:center;padding:4rem 2rem;color:#94a3b8;">'
+            '<div style="font-size:3.5rem;margin-bottom:1rem;">📁</div>'
+            '<div style="font-size:1.1rem;font-weight:600;color:#64748b;margin-bottom:0.5rem;">'
+            'Belum ada periode tersimpan</div>'
+            '<div style="font-size:0.9rem;">Klik <b>📤 Upload</b> di pojok kanan atas untuk mulai</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    st.stop()
+
+# ── Handle auto-pilih periode dari tombol "Buka" di tabel ────
+if st.session_state.get("_auto_periode") and periode_dipilih == _NEW_PERIODE_SENTINEL:
+    periode_dipilih = st.session_state.pop("_auto_periode")
     
 _NEW_PERIODE_SENTINEL = "- Upload file baru -"
 
@@ -1904,6 +2358,17 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             "dist": {},
         }
         df_result.insert(0, "No.", range(1, len(df_result) + 1))
+
+    _back_col, _spacer2 = st.columns([1, 7])
+    with _back_col:
+        if st.button("← Back", key="btn_back_main", use_container_width=True, type="secondary"):
+            st.session_state.show_upload_panel = False
+            st.session_state.pop("_auto_periode", None)
+            st.session_state.current_periode   = None
+            # Clear cache agar saat buka periode lain tidak stale
+            st.cache_data.clear()
+            st.rerun()
+    st.markdown("<div style='margin-bottom:0.5rem'></div>", unsafe_allow_html=True)
 
     total_s    = int(df_result["S"].sum())
     total_l    = int(df_result["Late"].sum())
@@ -2218,13 +2683,3 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             },
         )
 
-else:
-    st.markdown(
-        '<div style="text-align:center;padding:3rem 2rem;color:#94a3b8;">'
-        '<div style="font-size:3.5rem;margin-bottom:1rem;">📁</div>'
-        '<div style="font-size:1.1rem;font-weight:600;color:#64748b;margin-bottom:0.5rem;">'
-        'Belum ada file yang diupload</div>'
-        '<div style="font-size:0.9rem;">Upload file <code>.xlsx</code> absensi di atas untuk memulai</div>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
