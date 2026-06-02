@@ -40,6 +40,8 @@ if "dialog_target" not in st.session_state:
     st.session_state.dialog_target = None
 if "dialog_emp" not in st.session_state:
     st.session_state.dialog_emp = None
+if "df_key_suffix" not in st.session_state:
+    st.session_state.df_key_suffix = 0
 if "current_periode" not in st.session_state:
     st.session_state.current_periode = None
 if "show_upload_panel" not in st.session_state:
@@ -696,7 +698,7 @@ def _get_all_daily_from_db(periode):
     return pd.DataFrame(rows)
 
 
-@st.dialog("📋 Rincian Harian Karyawan", width="large")
+@st.dialog("📋 Rincian Harian Karyawan", width="large", dismissible=False)
 def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
     with st.spinner("⏳ Memuat rincian harian..."):
         if file_bytes is not None:
@@ -1123,7 +1125,11 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                                 f"✅ {_saved_n} baris absensi berhasil disimpan ke database."
                             )
 
-    st.caption("💡 Klik di luar kotak ini untuk menutup")
+    st.markdown("<div style='margin-top:1.5rem'></div>", unsafe_allow_html=True)
+    if st.button("❌ Tutup Rincian", use_container_width=True, type="secondary", key=f"btn_close_dlg_{account}"):
+        st.session_state.dialog_target = None
+        st.session_state.dialog_emp    = None
+        st.rerun()
 
 
 @st.cache_data(show_spinner=False)
@@ -2725,6 +2731,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
         on_select="rerun",
         selection_mode="single-row",
         column_config={k: v for k, v in COL_CONFIG_ALL.items() if k in visible_cols},
+        key=f"df_summary_{st.session_state.df_key_suffix}",
     )
 
     current_periode = st.session_state.get("current_periode") or _periode
@@ -2740,17 +2747,16 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                 "rules"  : emp["Rules"],
                 "periode": current_periode,
             }
-            if st.session_state.dialog_emp != new_emp or st.session_state.dialog_target != "detail":
-                st.session_state.dialog_target = "detail"
-                st.session_state.dialog_emp    = new_emp
-                st.rerun()
+            st.session_state.dialog_target = "detail"
+            st.session_state.dialog_emp    = new_emp
+            st.session_state.df_key_suffix += 1
+            st.rerun()
 
     if st.session_state.dialog_target == "logic":
         st.session_state.dialog_target = None
         show_logic_dialog()
     elif st.session_state.dialog_target == "detail" and st.session_state.dialog_emp:
         emp_s = st.session_state.dialog_emp
-        st.session_state.dialog_target = None
         show_daily_detail(
             account   = emp_s["account"],
             nama      = emp_s["nama"],
