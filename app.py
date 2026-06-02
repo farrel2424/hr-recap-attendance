@@ -2145,13 +2145,13 @@ if not st.session_state.get("show_upload_panel", False) and uploaded is None and
 <style>
 .pt-head {
     display: grid;
-    grid-template-columns: 1fr 130px 170px 170px;
-    border: 1px solid var(--border-color, #e2e8f0);
+    grid-template-columns: 48px 1fr 150px 180px 180px;
+    background: var(--table-header-bg, #1e293b);
+    border-bottom: 2px solid var(--border-strong, #475569);
+    padding: 0 1rem;
     border-radius: 12px 12px 0 0;
-    border-bottom: 2px solid var(--border-strong, #cbd5e1);
-    background: var(--table-header-bg, #f1f5f9);
-    padding: 0 1.2rem;
-    margin-bottom: 0;
+    border: 1px solid var(--border-color, #334155);
+    border-bottom: 2px solid var(--border-strong, #475569);
 }
 .pt-head-cell {
     padding: .65rem .5rem;
@@ -2159,73 +2159,76 @@ if not st.session_state.get("show_upload_panel", False) and uploaded is None and
     color: var(--text-faint, #94a3b8);
     text-transform: uppercase; letter-spacing: .09em;
 }
+.pt-outer {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.75rem;
+    align-items: center;
+    margin-bottom: 0;
+}
+.pt-card-wrap {
+    border: 1px solid var(--border-color, #334155);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 0;
+}
 .pt-row {
     display: grid;
-    grid-template-columns: 1fr 130px 170px 170px;
-    padding: .9rem 1.2rem;
-    border-left: 1px solid var(--border-color, #e2e8f0);
-    border-right: 1px solid var(--border-color, #e2e8f0);
-    border-bottom: 1px solid var(--border-color, #e2e8f0);
+    grid-template-columns: 48px 1fr 150px 180px 180px;
+    padding: 0 1rem;
+    border-bottom: 1px solid var(--border-color, #334155);
     align-items: center;
-    cursor: pointer;
+    background: var(--bg-secondary, #1e293b);
     transition: background .13s;
     position: relative;
+    min-height: 70px;
     box-sizing: border-box;
-    background: var(--bg-primary, #fff);
 }
-.pt-row:hover { background: var(--table-hover, #f0f7ff); }
+.pt-row:last-child { border-bottom: none; }
+.pt-row:hover { background: var(--table-hover, #1e3358); }
 .pt-row::before {
     content: '';
     position: absolute;
-    left: 0; top: 12%; bottom: 12%;
+    left: 0; top: 15%; bottom: 15%;
     width: 3px; border-radius: 0 3px 3px 0;
     background: var(--pt-accent, #6366f1);
-    opacity: .45; transition: opacity .13s;
+    opacity: .5; transition: opacity .13s;
 }
 .pt-row:hover::before { opacity: 1; }
-.pt-month-name { font-weight: 700; font-size: .92rem; color: var(--text-primary, #0f172a); }
-.pt-year { font-size: .8rem; color: var(--text-faint, #94a3b8); margin-left: .35rem; font-weight: 400; }
-.pt-sub { font-size: .7rem; color: var(--text-faint, #94a3b8); margin-top: .1rem; }
+.pt-num {
+    display: flex; align-items: center; justify-content: center;
+}
+.pt-num-circle {
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .78rem; font-weight: 700;
+    color: #fff;
+}
+.pt-cell-main { padding: .75rem .5rem; }
+.pt-month-name { font-weight: 700; font-size: .92rem; color: var(--text-primary, #f1f5f9); }
+.pt-year { font-size: .8rem; color: var(--text-faint, #64748b); margin-left: .35rem; font-weight: 400; }
+.pt-sub { font-size: .7rem; color: var(--text-faint, #64748b); margin-top: .15rem; }
 .pt-badge {
     display: inline-flex; align-items: center;
-    padding: .22rem .75rem; border-radius: 20px;
+    padding: .25rem .85rem; border-radius: 20px;
     font-family: monospace; font-size: .74rem; font-weight: 700;
     letter-spacing: .04em; white-space: nowrap;
 }
-.pt-muted { font-size: .81rem; color: var(--text-faint, #94a3b8); }
+.pt-muted {
+    font-size: .82rem;
+    color: var(--text-faint, #64748b);
+    padding: .75rem .5rem;
+}
 .pt-footer {
-    padding: .6rem 1.2rem;
-    border: 1px solid var(--border-color, #e2e8f0);
+    padding: .6rem 1rem;
+    border: 1px solid var(--border-color, #334155);
     border-top: none;
     border-radius: 0 0 12px 12px;
-    background: var(--bg-secondary, #f8fafc);
+    background: var(--bg-secondary, #1e293b);
     font-size: .75rem;
-    color: var(--text-faint, #94a3b8);
+    color: var(--text-faint, #64748b);
     display: flex; align-items: center; gap: .5rem;
     margin-bottom: 1rem;
-}
-
-/* ── Transparent overlay button — sits on top of the pt-row above it ── */
-.element-container:has(.pt-row) + .element-container [data-testid="stButton"] button {
-    margin-top: -72px !important;
-    height: 68px !important;
-    background: transparent !important;
-    border: none !important;
-    color: transparent !important;
-    position: relative !important;
-    z-index: 10 !important;
-    cursor: pointer !important;
-    box-shadow: none !important;
-    border-radius: 0 !important;
-    width: 100% !important;
-    padding: 0 !important;
-}
-.element-container:has(.pt-row) + .element-container [data-testid="stButton"] button:hover,
-.element-container:has(.pt-row) + .element-container [data-testid="stButton"] button:focus {
-    background: transparent !important;
-    box-shadow: none !important;
-    outline: none !important;
-    border: none !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -2233,6 +2236,7 @@ if not st.session_state.get("show_upload_panel", False) and uploaded is None and
         # ── Header ───────────────────────────────────────────
         st.markdown(
             '<div class="pt-head">'
+            '<div class="pt-head-cell"></div>'
             '<div class="pt-head-cell">Month</div>'
             '<div class="pt-head-cell">Periode</div>'
             '<div class="pt-head-cell">Upload Date</div>'
@@ -2242,6 +2246,8 @@ if not st.session_state.get("show_upload_panel", False) and uploaded is None and
         )
 
         # ── Rows ─────────────────────────────────────────────
+        st.markdown('<div class="pt-card-wrap">', unsafe_allow_html=True)
+
         for _i, _p in enumerate(periodes_tersedia):
             try:
                 _dt_obj     = _dt_mod.datetime.strptime(_p, "%Y-%m")
@@ -2253,23 +2259,55 @@ if not st.session_state.get("show_upload_panel", False) and uploaded is None and
 
             _accent, _badge_bg, _badge_fg = _ACCENTS[_i % len(_ACCENTS)]
 
-            _col_row, _col_btn = st.columns([11, 1], gap="small")
+            _col_row, _col_btn = st.columns([10, 1], gap="small")
 
             with _col_row:
                 st.markdown(
                     f'<div class="pt-row" style="--pt-accent:{_accent};">'
-                    f'<div>'
-                    f'<div><span class="pt-month-name">{_month_name}</span>'
-                    f'<span class="pt-year">{_year_name}</span></div>'
-                    f'<div class="pt-sub">Periode absensi bulanan</div>'
-                    f'</div>'
-                    f'<span class="pt-badge" style="background:{_badge_bg};color:{_badge_fg};'
+                    f'  <div class="pt-num">'
+                    f'    <div class="pt-num-circle" style="background:{_accent};">{_i + 1}</div>'
+                    f'  </div>'
+                    f'  <div class="pt-cell-main">'
+                    f'    <div>'
+                    f'      <span class="pt-month-name">{_month_name}</span>'
+                    f'      <span class="pt-year">{_year_name}</span>'
+                    f'    </div>'
+                    f'    <div class="pt-sub">Periode absensi bulanan</div>'
+                    f'  </div>'
+                    f'  <div style="padding:.75rem .5rem;">'
+                    f'    <span class="pt-badge" style="background:{_badge_bg};color:{_badge_fg};'
                     f'border:1px solid {_accent}55;">{_p}</span>'
-                    f'<span class="pt-muted">—</span>'
-                    f'<span class="pt-muted">—</span>'
+                    f'  </div>'
+                    f'  <div class="pt-muted">—</div>'
+                    f'  <div class="pt-muted">—</div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
+
+            with _col_btn:
+                if st.button(
+                    "📂 Buka",
+                    key=f"open_{_p}",
+                    use_container_width=True,
+                ):
+                    st.session_state.show_upload_panel = True
+                    st.session_state.show_export_panel = False
+                    st.session_state["_auto_periode"]  = _p
+                    st.rerun()
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # ── Footer ───────────────────────────────────────────
+        st.markdown(
+            f'<div class="pt-footer">'
+            f'  <span style="width:7px;height:7px;border-radius:50%;'
+            f'background:#6366f1;display:inline-block;flex-shrink:0;"></span>'
+            f'  <b>{len(periodes_tersedia)} periode</b> tersimpan di database'
+            f'  &nbsp;·&nbsp;'
+            f'  Klik <b>📥 Export</b> untuk mengunduh tanpa membuka periode'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
             with _col_btn:
                 if st.button("›", key=f"open_{_p}", use_container_width=True):
