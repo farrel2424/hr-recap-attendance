@@ -15,6 +15,7 @@ from database.db import (
     init_db, save_periode, get_periodes, get_rekap,
     get_daily, get_all_daily,
     update_karyawan, update_absensi_row,
+    soft_delete_periode,
 )
 from classifiers import (
     classify,
@@ -45,6 +46,14 @@ if "show_upload_panel" not in st.session_state:
     st.session_state.show_upload_panel = False
 if "show_export_panel" not in st.session_state:
     st.session_state.show_export_panel = False
+if "_pending_file_bytes" not in st.session_state:
+    st.session_state._pending_file_bytes = None
+if "_override_confirmed_for" not in st.session_state:
+    st.session_state._override_confirmed_for = None
+if "_show_override_confirm" not in st.session_state:
+    st.session_state._show_override_confirm = False
+if "_pending_override_periode" not in st.session_state:
+    st.session_state._pending_override_periode = None
 
 st.markdown("""
 <style>
@@ -2147,11 +2156,12 @@ if not st.session_state.get("show_upload_panel", False) and uploaded is None and
     display: grid;
     grid-template-columns: 48px 1fr 150px 180px 180px;
     background: var(--table-header-bg, #1e293b);
-    border-bottom: 2px solid var(--border-strong, #475569);
-    padding: 0 1rem;
-    border-radius: 12px 12px 0 0;
     border: 1px solid var(--border-color, #334155);
-    border-bottom: 2px solid var(--border-strong, #475569);
+    border-radius: 12px 12px 0 0;
+    padding: 0 1rem;
+    margin-bottom: -2px;
+    position: relative;
+    z-index: 1;
 }
 .pt-head-cell {
     padding: .65rem .5rem;
@@ -2234,16 +2244,20 @@ if not st.session_state.get("show_upload_panel", False) and uploaded is None and
 """, unsafe_allow_html=True)
 
         # ── Header ───────────────────────────────────────────
-        st.markdown(
-            '<div class="pt-head">'
-            '<div class="pt-head-cell"></div>'
-            '<div class="pt-head-cell">Month</div>'
-            '<div class="pt-head-cell">Periode</div>'
-            '<div class="pt-head-cell">Upload Date</div>'
-            '<div class="pt-head-cell">Created By</div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
+        _hcol, _hbtn_spacer = st.columns([10, 1], gap="small")
+        with _hcol:
+            st.markdown(
+                '<div class="pt-head">'
+                '<div class="pt-head-cell"></div>'
+                '<div class="pt-head-cell">Month</div>'
+                '<div class="pt-head-cell">Periode</div>'
+                '<div class="pt-head-cell">Upload Date</div>'
+                '<div class="pt-head-cell">Created By</div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+        with _hbtn_spacer:
+            st.markdown('<div style="min-height:1px"></div>', unsafe_allow_html=True)
 
         # ── Rows ─────────────────────────────────────────────
         st.markdown('<div class="pt-card-wrap">', unsafe_allow_html=True)
@@ -2309,24 +2323,6 @@ if not st.session_state.get("show_upload_panel", False) and uploaded is None and
             unsafe_allow_html=True,
         )
 
-            with _col_btn:
-                if st.button("›", key=f"open_{_p}", use_container_width=True):
-                    st.session_state.show_upload_panel = True
-                    st.session_state.show_export_panel = False
-                    st.session_state["_auto_periode"]  = _p
-                    st.rerun()
-
-        # ── Footer ───────────────────────────────────────────
-        st.markdown(
-            f'<div class="pt-footer">'
-            f'<span style="width:7px;height:7px;border-radius:50%;'
-            f'background:#6366f1;display:inline-block;flex-shrink:0;"></span>'
-            f'<b>{len(periodes_tersedia)} periode</b> tersimpan di database'
-            f'&nbsp;·&nbsp;'
-            f'Klik <b>📥 Export</b> untuk mengunduh tanpa membuka periode'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
 
     else:
         st.markdown(
@@ -2351,7 +2347,15 @@ _NEW_PERIODE_SENTINEL = "- Upload file baru -"
 
 if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     if uploaded is not None:
-        file_bytes = uploaded.read()
+        # Baca file_bytes — simpan ke session agar tidak hilang saat rerun
+        _raw_bytes = uploaded.read()
+        if _raw_bytes:
+            st.session_state._pending_file_bytes = _raw_bytes
+        file_bytes = st.session_state._pending_file_bytes or b""
+
+        if not file_bytes:
+            st.error("❌ File tidak dapat dibaca. Coba upload ulang.")
+            st.stop()
 
         with st.spinner("⚙️ Memproses data absensi..."):
             try:
@@ -2360,7 +2364,55 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                 st.error(f"❌ Gagal memproses file: {e}")
                 st.stop()
 
-        _periode = None
+        # ── Konfirmasi Override (tampil jika periode sudah ada) ──────────
+        if st.session_state.get("_show_override_confirm"):
+            _op = st.session_state._pending_override_periode
+            try:
+                _op_label = _dt.datetime.strptime(_op, "%Y-%m").strftime("%B %Y")
+            except Exception:
+                _op_label = _op
+
+            st.markdown(
+                f'<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;'
+                f'padding:1.2rem 1.6rem;margin-bottom:1rem;">'
+                f'<div style="font-size:1rem;font-weight:700;color:#92400e;margin-bottom:0.5rem;">'
+                f'⚠️ Data Sudah Ada</div>'
+                f'<div style="font-size:0.88rem;color:#78350f;">'
+                f'Bulan <b>{_op_label}</b> sudah ada di database. '
+                f'Apakah ingin <b>override</b> data lama?<br>'
+                f'<span style="font-size:0.8rem;color:#a16207;">'
+                f'Data lama akan di-soft-delete sebelum data baru disimpan.</span>'
+                f'</div></div>',
+                unsafe_allow_html=True,
+            )
+            _oc1, _oc2, _oc3 = st.columns([1, 1, 4])
+            with _oc1:
+                if st.button(
+                    "✅ Ya, Override",
+                    type="primary",
+                    use_container_width=True,
+                    key="btn_override_yes",
+                ):
+                    st.session_state._override_confirmed_for = _op
+                    st.session_state._show_override_confirm  = False
+                    st.rerun()
+            with _oc2:
+                if st.button(
+                    "❌ Tidak",
+                    use_container_width=True,
+                    key="btn_override_no",
+                ):
+                    st.session_state._show_override_confirm      = False
+                    st.session_state._pending_override_periode   = None
+                    st.session_state._pending_file_bytes         = None
+                    st.session_state._override_confirmed_for     = None
+                    st.session_state.show_upload_panel           = False
+                    st.info("ℹ️ Upload dibatalkan. Data lama tidak diubah.")
+                    st.rerun()
+            st.stop()
+
+        _periode  = None
+        _save_ok  = True
         try:
             import io as _io, re as _re, pandas as _pd
             _buf = _io.BytesIO(file_bytes)
@@ -2381,17 +2433,6 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             df_raw = df_raw[df_raw["Account"].notna() & df_raw["Rules"].notna()]
             df_raw = df_raw[~df_raw["Account"].astype(str).str.strip().isin(["", "--"])]
 
-            _k_sick_col    = _find_ksick_col(df_raw)
-            _al_col        = _find_al_col(df_raw)
-            _ul_col        = _find_ul_col(df_raw)
-            _dur_late_col  = _find_duration_late_col(df_raw)
-            _dur_early_col = _find_duration_early_col(df_raw)
-            _wfh_col       = _find_wfh_col(df_raw)
-            _offsite_col   = _find_offsite_col(df_raw)
-            _missed_punch_col  = _find_missed_punch_col(df_raw)
-
-            df_raw["_tipe_shift"] = df_raw["Shift"].apply(classify_shift_type)
-            # Assign semua kolom di luar apply
             _k_sick_col       = _find_ksick_col(df_raw)
             _al_col           = _find_al_col(df_raw)
             _ul_col           = _find_ul_col(df_raw)
@@ -2406,6 +2447,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             _ot_col           = _find_ot_col(df_raw)
             _rl_col           = _find_rl_col(df_raw)
 
+            df_raw["_tipe_shift"] = df_raw["Shift"].apply(classify_shift_type)
             df_raw["_status_klasifikasi"] = df_raw.apply(
                 lambda r: classify_str(
                     r["Earliest"], r["Shift"], r["Attendance results"],
@@ -2427,10 +2469,37 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                     rl_count=r.get(_rl_col)                  if _rl_col           else None,
                 ), axis=1,
             )
-            save_periode(df_raw, _periode)
-            st.session_state.current_periode = _periode
+
+            # ── Cek apakah periode sudah ada di DB ──────────────────────
+            _existing_periodes = get_periodes()
+            if (
+                _periode
+                and _periode != "unknown"
+                and _periode in _existing_periodes
+                and st.session_state.get("_override_confirmed_for") != _periode
+            ):
+                # Periode sudah ada & belum dikonfirmasi → tahan, minta konfirmasi
+                st.session_state._show_override_confirm    = True
+                st.session_state._pending_override_periode = _periode
+                _save_ok = False
+
+            if _save_ok:
+                # Jika override dikonfirmasi → soft delete dulu
+                if st.session_state.get("_override_confirmed_for") == _periode:
+                    soft_delete_periode(_periode)
+                    st.session_state._override_confirmed_for = None
+                    st.cache_data.clear()
+
+                save_periode(df_raw, _periode)
+                st.session_state.current_periode  = _periode
+                st.session_state._pending_file_bytes = None
+
         except Exception as e:
             st.warning(f"⚠️ Gagal simpan ke database: {e}")
+
+        # Jika perlu konfirmasi, tampilkan sekarang lalu stop
+        if not _save_ok:
+            st.rerun()
 
     else:
         _periode = periode_dipilih

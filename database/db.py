@@ -61,11 +61,28 @@ def init_db():
             )
         except Exception:
             pass
+        try:
+            conn.execute(
+                "ALTER TABLE absensi_harian ADD COLUMN is_deleted INTEGER DEFAULT 0"
+            )
+        except Exception:
+            pass
+        try:
+            conn.execute(
+                "ALTER TABLE absensi_harian ADD COLUMN deleted_at TEXT DEFAULT NULL"
+            )
+        except Exception:
+            pass
 
 
 def save_periode(df_raw, periode: str):
     with get_conn() as conn:
-        conn.execute("DELETE FROM absensi_harian WHERE periode = ?", (periode,))
+        # Hard DELETE hanya untuk record yang sudah di-soft-delete sebelumnya
+        # agar UNIQUE(karyawan_id, tanggal) tidak konflik saat INSERT baru
+        conn.execute(
+            "DELETE FROM absensi_harian WHERE periode = ? AND is_deleted = 1",
+            (periode,),
+        )
 
         for _, r in df_raw.iterrows():
             account = str(r.get("Account", "")).strip()
@@ -117,11 +134,31 @@ def save_periode(df_raw, periode: str):
                 periode,
             ))
 
+def soft_delete_periode(periode: str) -> None:
+    """
+    Tandai semua record periode sebagai terhapus (soft delete).
+    Record lama tetap ada di DB dengan is_deleted=1 dan deleted_at terisi.
+    Dipanggil sebelum save_periode() saat user konfirmasi override.
+    """
+    import datetime as _dt_now
+    _ts = _dt_now.datetime.now().isoformat()
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE absensi_harian
+                  SET is_deleted = 1,
+                      deleted_at = ?
+                WHERE periode = ?
+                  AND is_deleted = 0""",
+            (_ts, periode),
+        )
 
 def get_periodes():
     with get_conn() as conn:
         rows = conn.execute("""
-            SELECT DISTINCT periode FROM absensi_harian ORDER BY periode DESC
+            SELECT DISTINCT periode
+            FROM absensi_harian
+            WHERE is_deleted = 0
+            ORDER BY periode DESC
         """).fetchall()
     return [r["periode"] for r in rows]
 
@@ -173,6 +210,7 @@ def get_rekap(periode: str):
             FROM karyawan k
             JOIN absensi_harian a ON a.karyawan_id = k.id
             WHERE a.periode = ?
+              AND a.is_deleted = 0
             GROUP BY k.id
             ORDER BY k.rules, k.nama
         """, (periode,)).fetchall()
@@ -192,7 +230,9 @@ def get_daily(account: str, periode: str):
                 COALESCE(a.is_manual_override, 0)  AS is_manual_override
             FROM absensi_harian a
             JOIN karyawan k ON k.id = a.karyawan_id
-            WHERE k.account = ? AND a.periode = ?
+            WHERE k.account = ?
+              AND a.periode = ?
+              AND a.is_deleted = 0
             ORDER BY a.tanggal
         """, (account, periode)).fetchall()
     import pandas as pd
@@ -209,6 +249,7 @@ def get_all_daily(periode: str):
             FROM absensi_harian a
             JOIN karyawan k ON k.id = a.karyawan_id
             WHERE a.periode = ?
+              AND a.is_deleted = 0
             ORDER BY k.rules, k.nama, a.tanggal
         """, (periode,)).fetchall()
     import pandas as pd
