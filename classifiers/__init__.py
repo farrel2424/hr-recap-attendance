@@ -280,6 +280,7 @@ def classify_str(
         duration_late=duration_late,
         duration_early=duration_early,
         wfh_count=wfh_count,
+        offsite_hour=offsite_hour,          # ← TAMBAHKAN INI
         missed_punch_count=missed_punch_count,
         hl_count=hl_count,
         ml_count=ml_count,
@@ -287,6 +288,7 @@ def classify_str(
         ot_count=ot_count,
         rl_count=rl_count,
     )
+    
     if result is None:
         return None
     return "|".join(result)  # [] → "" (empty string, disimpan ke DB sebagai bukan NULL)

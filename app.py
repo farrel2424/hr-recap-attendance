@@ -43,14 +43,15 @@ if "current_periode" not in st.session_state:
     st.session_state.current_periode = None
 if "show_upload_panel" not in st.session_state:
     st.session_state.show_upload_panel = False
+if "show_export_panel" not in st.session_state:
+    st.session_state.show_export_panel = False
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap');
 
 html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 
-/* ── Light/Dark mode CSS variables ── */
 :root {
     --bg-primary:      #ffffff;
     --bg-secondary:    #f8fafc;
@@ -67,11 +68,12 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     --badge-color:     #1d4ed8;
     --table-hover:     #f0f7ff;
     --table-header-bg: #f1f5f9;
-    --btn-upload-bg:   linear-gradient(135deg, #dc2626, #ef4444);
-    --btn-upload-hover:#b91c1c;
+    --row-accent-1:    #3b82f6;
+    --row-accent-2:    #8b5cf6;
+    --row-accent-3:    #0ea5e9;
+    --row-accent-4:    #10b981;
 }
 
-[data-theme="dark"],
 @media (prefers-color-scheme: dark) {
     :root {
         --bg-primary:      #0f172a;
@@ -83,153 +85,164 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
         --text-secondary:  #cbd5e1;
         --text-muted:      #94a3b8;
         --text-faint:      #64748b;
-        --shadow-sm:       0 1px 3px rgba(0,0,0,0.3);
-        --shadow-md:       0 4px 12px rgba(0,0,0,0.4);
+        --shadow-sm:       0 1px 3px rgba(0,0,0,0.35);
+        --shadow-md:       0 4px 12px rgba(0,0,0,0.5);
         --badge-bg:        #1e3a5f;
         --badge-color:     #7dd3fc;
-        --table-hover:     #1e3a5f;
+        --table-hover:     #1e3358;
         --table-header-bg: #1e293b;
     }
 }
-
-/* Auto-detect Streamlit dark mode */
-[data-testid="stAppViewContainer"][class*="dark"] {
+/* Streamlit dark mode class override */
+[data-testid="stAppViewContainer"] {
     --bg-primary:      #0f172a;
     --bg-secondary:    #1e293b;
-    --bg-tertiary:     #334155;
-    --border-color:    #334155;
-    --border-strong:   #475569;
     --text-primary:    #f1f5f9;
     --text-secondary:  #cbd5e1;
     --text-muted:      #94a3b8;
     --text-faint:      #64748b;
+    --border-color:    #334155;
+    --border-strong:   #475569;
+    --table-hover:     #1e3358;
+    --table-header-bg: #1e293b;
+    --badge-bg:        #1e3a5f;
+    --badge-color:     #7dd3fc;
 }
 
-.main .block-container { padding: 2rem 3rem 4rem; max-width: 1400px; }
+.main .block-container { padding: 2rem 3rem 4rem; max-width: 1440px; }
 
 /* ── App Header ── */
 .app-header {
     background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
-    border-radius: 16px; padding: 2.5rem 3rem; margin-bottom: 1.5rem;
+    border-radius: 20px; padding: 2.5rem 3rem; margin-bottom: 1.5rem;
     position: relative; overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
 }
 .app-header::before {
     content: ''; position: absolute; top: -50%; right: -10%;
     width: 400px; height: 400px;
-    background: radial-gradient(circle, rgba(255,255,255,0.04) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%);
+    border-radius: 50%;
+}
+.app-header::after {
+    content: ''; position: absolute; bottom: -30%; left: 40%;
+    width: 250px; height: 250px;
+    background: radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%);
     border-radius: 50%;
 }
 .app-header h1 {
     color: #ffffff; font-size: 2.1rem; font-weight: 700;
     margin: 0 0 0.3rem 0; letter-spacing: -0.03em;
 }
-.app-header p { color: rgba(255,255,255,0.75); font-size: 0.95rem; margin: 0; }
+.app-header p { color: rgba(255,255,255,0.70); font-size: 0.92rem; margin: 0; }
 .badge {
-    display: inline-block; background: rgba(255,255,255,0.15); color: #7dd3fc;
-    padding: 0.2rem 0.7rem; border-radius: 20px; font-size: 0.78rem;
-    font-family: 'DM Mono', monospace; margin-bottom: 1rem; letter-spacing: 0.05em;
+    display: inline-block; background: rgba(255,255,255,0.12); color: #7dd3fc;
+    padding: 0.2rem 0.75rem; border-radius: 20px; font-size: 0.75rem;
+    font-family: 'DM Mono', monospace; margin-bottom: 1rem;
+    letter-spacing: 0.08em; border: 1px solid rgba(125,211,252,0.25);
 }
 
-/* ── Top Action Bar ── */
-.top-action-bar {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.6rem;
-    margin-bottom: 1.4rem;
-    padding: 0.6rem 0;
-}
-
-/* ── Periode Table ── */
-.periode-table-wrapper {
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 14px;
-    overflow: hidden;
-    box-shadow: var(--shadow-sm);
-    margin-bottom: 1.5rem;
-}
-.periode-table-header {
-    display: grid;
-    grid-template-columns: 52px 1fr 130px 180px 180px 110px;
-    background: var(--table-header-bg);
-    border-bottom: 2px solid var(--border-strong);
-    padding: 0 1rem;
-}
-.periode-table-header-cell {
-    padding: 0.75rem 0.5rem;
-    font-size: 0.70rem;
-    font-weight: 700;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-}
-.periode-table-row {
-    display: grid;
-    grid-template-columns: 52px 1fr 130px 180px 180px 110px;
-    padding: 0 1rem;
-    border-bottom: 1px solid var(--border-color);
-    align-items: center;
-    transition: background 0.15s;
-}
-.periode-table-row:last-child { border-bottom: none; }
-.periode-table-row:hover { background: var(--table-hover); }
-.periode-table-cell {
-    padding: 0.85rem 0.5rem;
-    font-size: 0.87rem;
-    color: var(--text-secondary);
-}
-.periode-table-cell.no    { color: var(--text-faint); font-size: 0.8rem; }
-.periode-table-cell.month { font-weight: 700; color: var(--text-primary); font-size: 0.9rem; }
-.periode-badge {
-    display: inline-block;
-    background: var(--badge-bg);
-    color: var(--badge-color);
-    padding: 0.2rem 0.65rem;
-    border-radius: 20px;
-    font-family: 'DM Mono', monospace;
-    font-size: 0.75rem;
-    font-weight: 600;
-    border: 1px solid var(--badge-color);
-}
-.empty-state {
-    text-align: center; padding: 4rem 2rem;
-    color: var(--text-faint);
-}
-.empty-state .icon { font-size: 3.5rem; margin-bottom: 1rem; }
-.empty-state .title {
-    font-size: 1.1rem; font-weight: 600;
-    color: var(--text-muted); margin-bottom: 0.5rem;
-}
-.empty-state .subtitle { font-size: 0.9rem; color: var(--text-faint); }
-
-/* ── Upload Panel ── */
-.upload-panel {
+/* ── Action Panel (Upload / Export) ── */
+.action-panel {
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 1.4rem 1.6rem;
+    border-radius: 14px;
+    padding: 1.4rem 1.8rem;
     margin-bottom: 1.5rem;
     box-shadow: var(--shadow-sm);
+    animation: slideDown 0.18s ease-out;
 }
-.upload-panel-title {
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.action-panel-title {
     font-weight: 700; font-size: 0.95rem;
-    color: var(--text-primary); margin-bottom: 1rem;
-    display: flex; align-items: center; gap: 0.4rem;
+    color: var(--text-primary); margin-bottom: 0.3rem;
+    display: flex; align-items: center; gap: 0.5rem;
 }
+.action-panel-desc {
+    font-size: 0.82rem; color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+
+/* ── Period Table ── */
+.period-section-title {
+    font-size: 0.78rem; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;
+}
+.period-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 14px; overflow: hidden;
+    box-shadow: var(--shadow-sm); margin-bottom: 1.5rem;
+}
+.period-header {
+    display: grid;
+    grid-template-columns: 48px 1fr 140px 190px 190px 120px;
+    background: var(--table-header-bg);
+    border-bottom: 2px solid var(--border-strong);
+    padding: 0 1.2rem;
+}
+.period-header-cell {
+    padding: 0.7rem 0.5rem;
+    font-size: 0.68rem; font-weight: 700;
+    color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em;
+}
+.period-row {
+    display: grid;
+    grid-template-columns: 48px 1fr 140px 190px 190px 120px;
+    padding: 0 1.2rem; border-bottom: 1px solid var(--border-color);
+    align-items: center; transition: background 0.12s;
+    position: relative;
+}
+.period-row::before {
+    content: ''; position: absolute; left: 0; top: 20%; bottom: 20%;
+    width: 3px; border-radius: 0 2px 2px 0; opacity: 0.6;
+    background: var(--row-accent);
+}
+.period-row:last-child { border-bottom: none; }
+.period-row:hover { background: var(--table-hover); }
+.period-row:hover::before { opacity: 1; }
+.period-cell { padding: 0.9rem 0.5rem; font-size: 0.86rem; color: var(--text-secondary); }
+.period-cell.no {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.78rem; color: var(--text-faint);
+    font-family: 'DM Mono', monospace;
+}
+.period-cell.month { font-weight: 700; color: var(--text-primary); font-size: 0.92rem; }
+.period-badge {
+    display: inline-flex; align-items: center;
+    background: var(--badge-bg); color: var(--badge-color);
+    padding: 0.22rem 0.7rem; border-radius: 20px;
+    font-family: 'DM Mono', monospace; font-size: 0.73rem;
+    font-weight: 600; border: 1px solid color-mix(in srgb, var(--badge-color) 30%, transparent);
+}
+.empty-state {
+    text-align: center; padding: 5rem 2rem; color: var(--text-faint);
+}
+.empty-state .icon { font-size: 4rem; margin-bottom: 1.2rem; opacity: 0.6; }
+.empty-state .title {
+    font-size: 1.1rem; font-weight: 700;
+    color: var(--text-muted); margin-bottom: 0.5rem;
+}
+.empty-state .subtitle { font-size: 0.88rem; }
 
 /* ── Metric Cards ── */
 .metric-row {
     display: grid; grid-template-columns: repeat(5, 1fr);
-    gap: 1.25rem; margin: 2rem 0 2.5rem;
+    gap: 1rem; margin: 2rem 0 2.5rem;
 }
 .metric-card {
-    border-radius: 14px; padding: 1.5rem 1.75rem 1.4rem;
+    border-radius: 14px; padding: 1.4rem 1.6rem 1.3rem;
     font-weight: 600; position: relative; overflow: hidden;
+    transition: transform 0.15s, box-shadow 0.15s;
 }
+.metric-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
 .metric-card::after {
-    content: ''; position: absolute; bottom: -18px; right: -18px;
-    width: 70px; height: 70px; border-radius: 50%; opacity: 0.07; background: currentColor;
+    content: ''; position: absolute; bottom: -20px; right: -20px;
+    width: 80px; height: 80px; border-radius: 50%; opacity: 0.06; background: currentColor;
 }
 .metric-shift    { background: #f0fdf4; border-left: 4px solid #22c55e; }
 .metric-late     { background: #fffbeb; border-left: 4px solid #f59e0b; }
@@ -251,12 +264,12 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .metric-rl       { background: #f0fdf4; border-left: 4px solid #4ade80; }
 
 .metric-card .label {
-    font-size: 0.75rem; color: #64748b; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 0.5rem;
+    font-size: 0.72rem; color: #64748b; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.5rem;
     display: flex; align-items: center; gap: 0.35rem;
 }
 .metric-card .value {
-    font-size: 2.2rem; font-weight: 700;
+    font-size: 2.1rem; font-weight: 700;
     font-family: 'DM Mono', monospace; line-height: 1;
 }
 .metric-shift    .value { color: #16a34a; }
@@ -277,7 +290,7 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .metric-wml      .value { color: #0e7490; }
 .metric-ot       .value { color: #475569; }
 .metric-rl       .value { color: #15803d; }
-.metric-card .sub { font-size: 0.72rem; color: #94a3b8; font-weight: 400; margin-top: 0.35rem; }
+.metric-card .sub { font-size: 0.70rem; color: #94a3b8; font-weight: 400; margin-top: 0.35rem; }
 
 /* ── Download Button ── */
 .stDownloadButton button {
@@ -285,7 +298,7 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     color: white !important; border: none !important;
     padding: 0.6rem 1.8rem !important; border-radius: 8px !important;
     font-weight: 600 !important; font-size: 0.9rem !important;
-    letter-spacing: 0.02em !important; transition: all 0.2s !important;
+    transition: all 0.2s !important;
 }
 .stDownloadButton button:hover {
     transform: translateY(-1px) !important;
@@ -1222,21 +1235,19 @@ def process_file(file_bytes):
 # Setiap sel diberi background color sesuai klasifikasi (palet pastel).
 # ──────────────────────────────────────────────────────────────
 
-def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Absensi"
-
+def _populate_calendar_ws(ws, df_daily, df_employees):
+    """
+    Tulis data kalender harian ke sebuah openpyxl Worksheet yang sudah ada.
+    Dipakai bersama oleh to_excel_calendar_bytes() dan export_multi_period_bytes().
+    """
     thin   = Side(style="thin", color="000000")
     BORDER = Border(left=thin, right=thin, top=thin, bottom=thin)
     CENTER = Alignment(horizontal="center", vertical="center")
     BOLD   = Font(name="Arial", bold=True, size=10)
     PLAIN  = Font(name="Arial", bold=False, size=9)
 
-    # ── Kumpulkan tanggal unik ──────────────────────────────────────────
     dates = sorted(df_daily["Date"].dropna().unique()) if not df_daily.empty else []
 
-    # ── Lookup harian: {account: {date: (shift, classification)}} ──────
     daily_map: dict = {}
     for _, row in df_daily.iterrows():
         acc = row["Account"]
@@ -1249,7 +1260,7 @@ def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
 
     n_date_cols = len(dates)
 
-    # ── Baris 1: NO / KTP / NAME + tanggal (format 'd') ───────────────
+    # ── Baris 1: header kolom + tanggal (format 'd') ───────────────────
     for ci, header in enumerate(["NO", "KTP", "NAME", "ACCOUNT"], 1):
         c = ws.cell(1, ci)
         c.value     = header
@@ -1278,8 +1289,8 @@ def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
             c.alignment     = CENTER
             c.border        = BORDER
 
-    # ── Baris 2: kosong (A–C) + singkatan hari (format 'ddd') ─────────
-    for ci in range(1, 4):
+    # ── Baris 2: singkatan hari (format 'ddd') ─────────────────────────
+    for ci in range(1, 5):
         c = ws.cell(2, ci)
         c.font      = BOLD
         c.alignment = CENTER
@@ -1294,36 +1305,20 @@ def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
         c.alignment     = CENTER
         c.border        = BORDER
 
-    # ── Baris 3+: data karyawan ────────────────────────────────────────
+    # ── Baris 3+: data per karyawan ────────────────────────────────────
     emp_list = df_employees[["Nama", "Account"]].drop_duplicates("Account").to_dict("records")
 
     for ri, emp in enumerate(emp_list):
-        er = ri + 3
-
-        c = ws.cell(er, 1)
-        c.value     = ri + 1
-        c.font      = PLAIN
-        c.alignment = CENTER
-        c.border    = BORDER
-
-        c = ws.cell(er, 2)        # KTP — dikosongkan
-        c.font      = PLAIN
-        c.alignment = CENTER
-        c.border    = BORDER
-
-        c = ws.cell(er, 3)
-        c.value     = emp["Nama"]
-        c.font      = PLAIN
-        c.alignment = CENTER
-        c.border    = BORDER
-
-        c = ws.cell(er, 4)
-        c.value     = emp["Account"]
-        c.font      = PLAIN
-        c.alignment = CENTER
-        c.border    = BORDER
-
+        er  = ri + 3
         acc = emp["Account"]
+
+        for ci_fix, val_fix in [(1, ri + 1), (2, None), (3, emp["Nama"]), (4, acc)]:
+            c = ws.cell(er, ci_fix)
+            c.value     = val_fix
+            c.font      = PLAIN
+            c.alignment = CENTER
+            c.border    = BORDER
+
         for di, d in enumerate(dates):
             ci = 5 + di
             c  = ws.cell(er, ci)
@@ -1335,8 +1330,6 @@ def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
 
             c.value = label
             c.font  = Font(name="Arial", size=9, bold=(label in ("DW", "K")))
-
-            # ── Background color sesuai klasifikasi ──────────────────
             if label and label in _CELL_FILL:
                 c.fill = _CELL_FILL[label]
 
@@ -1347,6 +1340,54 @@ def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
     ws.column_dimensions["D"].width = 22.0
     for di in range(n_date_cols):
         ws.column_dimensions[get_column_letter(5 + di)].width = 13.0
+
+
+def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
+    """Buat file .xlsx kalender harian (satu sheet) — hasil upload / filter."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Absensi"
+    _populate_calendar_ws(ws, df_daily, df_employees)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def export_multi_period_bytes(selected_periods: list) -> bytes:
+    """
+    Buat satu file .xlsx dengan beberapa sheet — satu sheet per periode yang dipilih.
+    Data diambil dari database (tidak memerlukan file Excel di-upload ulang).
+    """
+    wb = Workbook()
+    wb.remove(wb.active)   # hapus sheet kosong default
+
+    for periode in selected_periods:
+        df_daily = _get_all_daily_from_db(periode)
+        df_rekap_raw = get_rekap(periode)
+        if df_rekap_raw.empty:
+            continue
+
+        df_emp = df_rekap_raw.rename(columns={
+            "nama": "Nama", "account": "Account", "rules": "Rules",
+        })
+        # Pastikan kolom Nama & Account tersedia
+        for _col in ("Nama", "Account"):
+            if _col not in df_emp.columns:
+                df_emp[_col] = ""
+
+        # Sheet name maks 31 karakter (batasan Excel)
+        sheet_title = str(periode)[:31]
+        # Hindari duplikat nama sheet
+        existing_titles = [s.title for s in wb.worksheets]
+        if sheet_title in existing_titles:
+            sheet_title = sheet_title[:27] + f"_{len(existing_titles)}"
+
+        ws = wb.create_sheet(title=sheet_title)
+        _populate_calendar_ws(ws, df_daily, df_emp)
+
+    if not wb.worksheets:
+        ws = wb.create_sheet("Tidak Ada Data")
+        ws.cell(1, 1).value = "Tidak ada data tersedia untuk periode yang dipilih."
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -1806,6 +1847,14 @@ _LOGIC_HTML = (
     '- <b>Tombol Upload</b>: digeser ke pojok kanan atas bersama tombol Logic, menggunakan layout kolom [5,1]<br>'
     '- <b>Tombol Back</b>: muncul di halaman rekap untuk kembali ke tabel riwayat periode<br>'
     '- <b>Tabel Riwayat</b>: kolom No. | Month | Periode | Upload Date | Created By | Aksi (Buka)<br><br>'
+    '<br><br>'
+    '<b>7. 📥 Fitur Export Multi-Periode (Update Terbaru):</b><br>'
+    '- Tombol <b>📥 Export</b> ditambahkan di action bar (kanan atas, di antara Upload dan Logic)<br>'
+    '- Saat diklik, muncul <b>panel month selector</b> — multiselect daftar periode yang sudah ada di DB<br>'
+    '- Pengguna memilih satu atau lebih bulan, lalu klik <b>Download</b><br>'
+    '- Hasil: satu file <code>.xlsx</code> dengan <b>sheet terpisah per periode</b> — tanpa perlu upload ulang<br>'
+    '- Data diambil langsung dari database melalui <code>_get_all_daily_from_db()</code><br>'
+    '- Fungsi internal <code>_populate_calendar_ws()</code> dipakai bersama oleh export reguler dan multi-periode<br>'
     '</div>'
 
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
@@ -1908,15 +1957,27 @@ st.markdown(
 )
 
 # ── Top Action Bar: rata kanan ───────────────────────────────
-_spacer, _action_col = st.columns([5, 1], gap="small")
+_spacer, _action_col = st.columns([4, 1], gap="small")
 with _action_col:
-    _ab1, _ab2 = st.columns(2, gap="small")
+    _ab1, _ab2, _ab3 = st.columns(3, gap="small")
     with _ab1:
         if st.button("📤 Upload", use_container_width=True, type="primary", key="btn_upload_top"):
             st.session_state.show_upload_panel = not st.session_state.get("show_upload_panel", False)
+            st.session_state.show_export_panel = False
             st.session_state.pop("_auto_periode", None)
             st.rerun()
     with _ab2:
+        _export_active = st.session_state.get("show_export_panel", False)
+        if st.button(
+            "📥 Export",
+            use_container_width=True,
+            type="primary" if _export_active else "secondary",
+            key="btn_export_top",
+        ):
+            st.session_state.show_export_panel = not _export_active
+            st.session_state.show_upload_panel = False
+            st.rerun()
+    with _ab3:
         if st.button("📋 Logic", use_container_width=True, type="secondary", key="btn_logic_top"):
             st.session_state.dialog_target = "logic"
             st.session_state.dialog_emp    = None
@@ -1925,6 +1986,77 @@ with _action_col:
 if st.session_state.dialog_target == "logic":
     st.session_state.dialog_target = None
     show_logic_dialog()
+
+# ── Export Panel ──────────────────────────────────────────────
+if st.session_state.get("show_export_panel", False):
+    _exp_periodes = get_periodes()
+    if not _exp_periodes:
+        st.warning("⚠️ Belum ada periode tersimpan. Upload file Excel terlebih dahulu.")
+        st.session_state.show_export_panel = False
+    else:
+        st.markdown(
+            '<div class="action-panel">'
+            '<div class="action-panel-title">📥 Export Data Absensi</div>'
+            '<div class="action-panel-desc">'
+            'Pilih satu atau beberapa bulan — setiap bulan menjadi sheet terpisah dalam satu file <code>.xlsx</code>.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        _ex_col1, _ex_col2 = st.columns([3, 2], gap="medium")
+        with _ex_col1:
+            import datetime as _dt_ex
+            _period_label_map = {}
+            for _pp in _exp_periodes:
+                try:
+                    _period_label_map[_pp] = (
+                        _dt_ex.datetime.strptime(_pp, "%Y-%m").strftime("%B %Y")
+                        + f"  ·  {_pp}"
+                    )
+                except Exception:
+                    _period_label_map[_pp] = _pp
+
+            _sel_export = st.multiselect(
+                label="📅 Pilih Bulan / Periode",
+                options=_exp_periodes,
+                format_func=lambda x: _period_label_map.get(x, x),
+                placeholder="Klik untuk memilih periode...",
+                key="export_period_select",
+            )
+
+        with _ex_col2:
+            st.markdown("<div style='height:30px'></div>", unsafe_allow_html=True)
+            if _sel_export:
+                _export_label = (
+                    "_".join(_sel_export)
+                    if len(_sel_export) <= 3
+                    else f"{_sel_export[0]}_sd_{_sel_export[-1]}"
+                )
+                with st.spinner("⚙️ Menyiapkan file..."):
+                    _export_bytes = export_multi_period_bytes(_sel_export)
+                st.download_button(
+                    label=f"📥 Download {len(_sel_export)} Periode (.xlsx)",
+                    data=_export_bytes,
+                    file_name=f"Absensi_Export_{_export_label}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    type="primary",
+                    key="btn_download_export",
+                )
+                st.caption(
+                    f"✅ {len(_sel_export)} sheet  ·  "
+                    + "  |  ".join(
+                        _period_label_map.get(p, p).split("  ·  ")[0]
+                        for p in _sel_export
+                    )
+                )
+            else:
+                st.markdown(
+                    '<div style="background:#f1f5f9;border-radius:10px;padding:0.9rem 1.2rem;'
+                    'text-align:center;color:#64748b;font-size:0.85rem;">'
+                    '⬅️ Pilih periode terlebih dahulu</div>',
+                    unsafe_allow_html=True,
+                )
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # ── Ambil daftar periode ──────────────────────────────────────
 periodes_tersedia = get_periodes()
@@ -1974,81 +2106,173 @@ if st.session_state.get("_auto_periode") and periode_dipilih == _NEW_PERIODE_SEN
 if not st.session_state.get("show_upload_panel", False) and uploaded is None and periode_dipilih == _NEW_PERIODE_SENTINEL:
     import datetime as _dt_mod
 
+    # ── Section header ────────────────────────────────────────
     st.markdown(
-        '<p class="section-title">🗂️ Riwayat Periode Absensi</p>',
+        '<div style="'
+        'display:flex;align-items:center;gap:.6rem;'
+        'margin-bottom:1.2rem;'
+        '">'
+        '<div style="'
+        'width:8px;height:8px;border-radius:50%;'
+        'background:#f59e0b;'
+        'box-shadow:0 0 6px #f59e0b;'
+        '"></div>'
+        '<span style="'
+        'font-size:.72rem;font-weight:700;'
+        'color:var(--text-muted);'
+        'text-transform:uppercase;letter-spacing:.1em;'
+        '">Riwayat Periode Absensi</span>'
+        '</div>',
         unsafe_allow_html=True,
     )
 
     if periodes_tersedia:
-        # ── Header kolom tabel ────────────────────────────────
-        _h = st.columns([0.45, 2.2, 1.1, 1.6, 1.6, 1.1])
-        _headers = ["No.", "Month", "Periode", "Upload Date", "Created By", ""]
-        _hstyle = (
-            "font-size:0.70rem;font-weight:700;color:#475569;"
-            "text-transform:uppercase;letter-spacing:.07em;"
-            "padding:.65rem .4rem .55rem;border-bottom:2px solid #e2e8f0;"
-        )
-        for _hc, _ht in zip(_h, _headers):
-            with _hc:
-                st.markdown(f'<div style="{_hstyle}">{_ht}</div>', unsafe_allow_html=True)
 
-        # ── Baris data ────────────────────────────────────────
+        # Palet warna per baris — format: (left_border, num_bg, num_text, badge_bg, badge_text)
+        _PAL = [
+            ("#3b82f6", "#1e3a5f", "#93c5fd", "#172554", "#bfdbfe"),
+            ("#a855f7", "#3b0764", "#e9d5ff", "#2e1065", "#d8b4fe"),
+            ("#0ea5e9", "#082f49", "#7dd3fc", "#0c4a6e", "#bae6fd"),
+            ("#10b981", "#022c22", "#6ee7b7", "#064e3b", "#a7f3d0"),
+            ("#f59e0b", "#451a03", "#fcd34d", "#3b1400", "#fde68a"),
+            ("#ef4444", "#450a0a", "#fca5a5", "#3b0000", "#fecaca"),
+            ("#6366f1", "#1e1b4b", "#a5b4fc", "#1e1b4b", "#c7d2fe"),
+        ]
+
         for _i, _p in enumerate(periodes_tersedia):
             try:
-                _month_label = _dt_mod.datetime.strptime(_p, "%Y-%m").strftime("%B %Y")
+                _dt_obj     = _dt_mod.datetime.strptime(_p, "%Y-%m")
+                _month_name = _dt_obj.strftime("%B")
+                _year_name  = _dt_obj.strftime("%Y")
+                _month_num  = _dt_obj.strftime("%m")
             except Exception:
-                _month_label = _p
+                _month_name = _p
+                _year_name  = ""
+                _month_num  = str(_i + 1)
 
-            _bg = "#f8fafc" if _i % 2 == 0 else "#ffffff"
-            _cell = (
-                f"padding:.8rem .4rem;font-size:.87rem;"
-                f"border-bottom:1px solid #f1f5f9;background:{_bg};"
-            )
-            _r = st.columns([0.45, 2.2, 1.1, 1.6, 1.6, 1.1])
-            with _r[0]:
+            _border, _nb, _nt, _bb, _bt = _PAL[_i % len(_PAL)]
+
+            # Satu baris = kolom info (HTML) + kolom tombol (Streamlit)
+            _col_info, _col_btn = st.columns([8.5, 1.5], gap="small")
+
+            with _col_info:
                 st.markdown(
-                    f'<div style="{_cell}color:#94a3b8;font-size:.8rem;">{_i+1}</div>',
+                    f'<div style="'
+                    f'background:var(--bg-secondary);'
+                    f'border:1px solid var(--border-color);'
+                    f'border-left:4px solid {_border};'
+                    f'border-radius:14px;'
+                    f'padding:.95rem 1.4rem;'
+                    f'margin-bottom:.5rem;'
+                    f'display:flex;align-items:center;gap:1.2rem;'
+                    f'transition:border-color .15s;'
+                    f'">'
+
+                    # ── Lingkaran nomor ──
+                    f'<div style="'
+                    f'min-width:38px;height:38px;'
+                    f'background:{_nb};'
+                    f'border-radius:50%;'
+                    f'display:flex;align-items:center;justify-content:center;'
+                    f'font-size:.82rem;font-weight:700;'
+                    f'color:{_nt};'
+                    f'font-family:monospace;'
+                    f'flex-shrink:0;'
+                    f'">{_i + 1}</div>'
+
+                    # ── Nama bulan + tahun ──
+                    f'<div style="flex:1;min-width:0;">'
+                    f'<div style="'
+                    f'font-weight:700;font-size:.98rem;'
+                    f'color:var(--text-primary);'
+                    f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
+                    f'">{_month_name}'
+                    f'<span style="'
+                    f'font-weight:400;font-size:.85rem;'
+                    f'color:var(--text-muted);margin-left:.4rem;'
+                    f'">{_year_name}</span>'
+                    f'</div>'
+                    f'<div style="'
+                    f'font-size:.72rem;color:var(--text-faint);margin-top:.1rem;'
+                    f'">Periode absensi bulanan</div>'
+                    f'</div>'
+
+                    # ── Badge periode ──
+                    f'<div style="'
+                    f'background:{_bb};'
+                    f'color:{_bt};'
+                    f'padding:.28rem .85rem;'
+                    f'border-radius:20px;'
+                    f'font-family:monospace;font-size:.8rem;font-weight:700;'
+                    f'letter-spacing:.04em;'
+                    f'white-space:nowrap;'
+                    f'border:1px solid {_border}44;'
+                    f'">{_p}</div>'
+
+                    # ── Upload date ──
+                    f'<div style="'
+                    f'min-width:110px;text-align:center;'
+                    f'color:var(--text-faint);font-size:.8rem;'
+                    f'">—</div>'
+
+                    # ── Created by ──
+                    f'<div style="'
+                    f'min-width:110px;text-align:center;'
+                    f'color:var(--text-faint);font-size:.8rem;'
+                    f'">—</div>'
+
+                    f'</div>',
                     unsafe_allow_html=True,
                 )
-            with _r[1]:
+
+            with _col_btn:
+                # Spasi vertikal agar tombol sejajar dengan card
                 st.markdown(
-                    f'<div style="{_cell}font-weight:700;color:#0f172a;font-size:.9rem;">'
-                    f'{_month_label}</div>',
+                    '<div style="height:.3rem"></div>',
                     unsafe_allow_html=True,
                 )
-            with _r[2]:
-                st.markdown(
-                    f'<div style="{_cell}">'
-                    f'<span style="background:#eff6ff;color:#1d4ed8;padding:.18rem .6rem;'
-                    f'border-radius:20px;font-family:monospace;font-size:.75rem;'
-                    f'font-weight:600;border:1px solid #bfdbfe;">{_p}</span></div>',
-                    unsafe_allow_html=True,
-                )
-            with _r[3]:
-                st.markdown(
-                    f'<div style="{_cell}color:#94a3b8;">—</div>',
-                    unsafe_allow_html=True,
-                )
-            with _r[4]:
-                st.markdown(
-                    f'<div style="{_cell}color:#94a3b8;">—</div>',
-                    unsafe_allow_html=True,
-                )
-            with _r[5]:
-                if st.button("📂 Buka", key=f"open_{_p}", use_container_width=True):
+                if st.button(
+                    "📂 Buka",
+                    key=f"open_{_p}",
+                    use_container_width=True,
+                ):
                     st.session_state.show_upload_panel = True
+                    st.session_state.show_export_panel = False
                     st.session_state["_auto_periode"]  = _p
                     st.rerun()
 
-        st.caption(f"🗄️ {len(periodes_tersedia)} periode tersimpan di database")
+        # ── Footer ───────────────────────────────────────────────────
+        st.markdown(
+            f'<div style="'
+            f'margin-top:.4rem;padding:.6rem .2rem;'
+            f'border-top:1px solid var(--border-color);'
+            f'display:flex;align-items:center;gap:.5rem;'
+            f'font-size:.76rem;color:var(--text-faint);'
+            f'">'
+            f'<span style="'
+            f'display:inline-block;width:7px;height:7px;'
+            f'border-radius:50%;background:#6366f1;'
+            f'"></span>'
+            f'{len(periodes_tersedia)} periode tersimpan di database'
+            f'&nbsp;&nbsp;·&nbsp;&nbsp;'
+            f'Klik <b style="color:var(--text-muted);">📥 Export</b> '
+            f'untuk mengunduh tanpa membuka periode'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
     else:
         st.markdown(
-            '<div style="text-align:center;padding:4rem 2rem;color:#94a3b8;">'
-            '<div style="font-size:3.5rem;margin-bottom:1rem;">📁</div>'
-            '<div style="font-size:1.1rem;font-weight:600;color:#64748b;margin-bottom:0.5rem;">'
-            'Belum ada periode tersimpan</div>'
-            '<div style="font-size:0.9rem;">Klik <b>📤 Upload</b> di pojok kanan atas untuk mulai</div>'
+            '<div style="'
+            'text-align:center;padding:5rem 2rem;'
+            '">'
+            '<div style="font-size:4rem;margin-bottom:1.2rem;opacity:.35;">📁</div>'
+            '<div style="'
+            'font-size:1.05rem;font-weight:700;'
+            'color:var(--text-muted);margin-bottom:.5rem;'
+            '">Belum ada periode tersimpan</div>'
+            '<div style="font-size:.85rem;color:var(--text-faint);">'
+            'Klik <b>📤 Upload</b> di pojok kanan atas untuk mulai</div>'
             '</div>',
             unsafe_allow_html=True,
         )
