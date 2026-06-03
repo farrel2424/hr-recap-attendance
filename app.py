@@ -16,6 +16,9 @@ from database.db import (
     get_daily, get_all_daily,
     update_karyawan, update_absensi_row,
     soft_delete_periode,
+    get_dates_in_periode,
+    get_rules_in_periode,
+    bulk_update_h,
 )
 from classifiers import (
     classify,
@@ -56,6 +59,8 @@ if "_show_override_confirm" not in st.session_state:
     st.session_state._show_override_confirm = False
 if "_pending_override_periode" not in st.session_state:
     st.session_state._pending_override_periode = None
+if "show_h_panel" not in st.session_state:
+    st.session_state.show_h_panel = False
 
 st.markdown("""
 <style>
@@ -273,6 +278,7 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .metric-wml      { background: #f0f9ff; border-left: 4px solid #22d3ee; }
 .metric-ot       { background: #f8fafc; border-left: 4px solid #94a3b8; }
 .metric-rl       { background: #f0fdf4; border-left: 4px solid #4ade80; }
+.metric-h        { background: #fff0f0; border-left: 4px solid #ff4444; }
 
 .metric-card .label {
     font-size: 0.72rem; color: #64748b; font-weight: 600;
@@ -301,6 +307,7 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .metric-wml      .value { color: #0e7490; }
 .metric-ot       .value { color: #475569; }
 .metric-rl       .value { color: #15803d; }
+.metric-h        .value { color: #cc0000; }
 .metric-card .sub { font-size: 0.70rem; color: #94a3b8; font-weight: 400; margin-top: 0.35rem; }
 
 /* ── Download Button ── */
@@ -379,6 +386,7 @@ _STATUS_ICON = {
     "WML"    : "👶",
     "OT"     : "📝",
     "RL"     : "📅",
+    "H"      : "🔴",
     "None"   : "❓",
 }
 
@@ -415,7 +423,9 @@ _LABEL_MAP = {
     "WML":     "WML",
     "OT":      "OT",
     "RL":      "RL",
+    "H":       "H",
 }
+
 
 # Pemetaan background color (hex tanpa '#') untuk tiap label ekspor
 # Palet warna pastel — mudah dibaca, konsisten dengan tema aplikasi
@@ -437,6 +447,7 @@ _CELL_FILL: dict[str, PatternFill] = {
     "WML":    PatternFill("solid", fgColor="A2C4C9"),  # teal         — cuti istri melahirkan
     "OT":     PatternFill("solid", fgColor="D9D9D9"),  # abu-abu
     "RL":     PatternFill("solid", fgColor="D9EAD3"),  # hijau muda — roster leave      — cuti lainnya
+    "H":      PatternFill("solid", fgColor="FF9999"),  # merah cerah — hari libur nasional
 }
 
 
@@ -787,7 +798,7 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                 _ALL_STATUS_OPTS = [
                     "S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
                     "WFA", "1/2 WFA", "WFS", "DW", "K", "Off",
-                    "HL", "ML", "WML", "OT", "None",
+                    "HL", "ML", "WML", "OT", "RL", "H", "None",
                 ]
                 st.markdown(
                     '<div style="font-size:0.82rem;color:#64748b;margin-bottom:0.6rem;">'
@@ -962,7 +973,7 @@ def process_file(file_bytes):
     pivot.columns.name = None
 
     ALL_STATUS_COLS = ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL", "WFA", "1/2 WFA", "WFS", "DW", "K", "Off",
-                       "HL", "ML", "WML", "OT", "RL"]
+                       "HL", "ML", "WML", "OT", "RL", "H"]
     for col in ALL_STATUS_COLS:
         if col not in pivot.columns:
             pivot[col] = 0
@@ -1179,6 +1190,7 @@ OPTIONAL_COLS_DEF = [
     ("WML",    "👶 WML",          "Cuti Istri Melahirkan"),
     ("OT",     "📝 OT",           "Cuti Lainnya"),
     ("RL",     "📅 RL",           "Roster Leave"),
+    ("H",      "🔴 H",            "Hari Libur Nasional"),
 ]
 OPTIONAL_KEYS   = [c[0] for c in OPTIONAL_COLS_DEF]
 OPTIONAL_LABELS = {c[0]: c[1] for c in OPTIONAL_COLS_DEF}
@@ -1206,6 +1218,7 @@ COL_CONFIG_ALL = {
     "WML"     : st.column_config.NumberColumn("👶 WML",         format="%d", width="small"),
     "OT"      : st.column_config.NumberColumn("📝 OT",          format="%d", width="small"),
     "RL"      : st.column_config.NumberColumn("📅 RL",          format="%d", width="small"),
+    "H"       : st.column_config.NumberColumn("🔴 H",           format="%d", width="small"),
 }
 
 
@@ -1248,6 +1261,10 @@ _LOGIC_HTML = (
 
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.6rem;font-size:0.82rem;'
     'text-transform:uppercase;letter-spacing:0.06em;">🎨 Warna Sel Ekspor</div>'
+    
+    '<tr><td style="padding:0.3rem 0.7rem;"><b>H</b></td>'
+    '<td style="padding:0.3rem 0.7rem;"><span style="background:#FF9999;padding:2px 10px;border-radius:3px;">▮ #FF9999</span></td>'
+    '<td style="padding:0.3rem 0.7rem;">Hari Libur Nasional — merah cerah</td></tr>'
 
     '<table style="width:100%;border-collapse:collapse;margin-bottom:1.2rem;">'
     '<tr style="background:#f1f5f9;">'
@@ -1633,6 +1650,12 @@ _LOGIC_HTML = (
     'kecuali dialog employee yang sama sudah di-close secara eksplisit (<code>dialog_target == "closed"</code>)<br>'
     '- Hapus blok <code>else</code> yang me-reset <code>dialog_target = None</code> saat tidak ada baris dipilih, '
     'karena dialog mengelola lifecycle-nya sendiri setelah dibuka<br><br>'
+    '<b>9. 🔴 Klasifikasi Baru H — Hari Libur Nasional (Tanggal Merah):</b><br>'
+    '- Status <b>H</b> tidak dihasilkan oleh engine klasifikasi otomatis — hanya diterapkan via fitur <b>Bulk Correction</b><br>'
+    '- <b>Alur kerja Bulk Correction:</b> pilih periode → pilih tanggal merah → pilih Rules (atau semua) → konfirmasi → semua record yang cocok di-update ke H dengan <code>is_manual_override = 1</code><br>'
+    '- Ekspor kalender: sel H diberi warna <code style="background:#FF9999;padding:1px 6px;border-radius:3px;">H (#FF9999)</code><br>'
+    '- Status H bersifat override penuh — menimpa apapun yang sebelumnya ada di kolom <code>status_klasifikasi</code><br>'
+    '- Tombol <b>🔴 Tanggal Merah</b> tersedia di action bar kanan atas, dapat diakses tanpa membuka periode terlebih dahulu<br><br>'
     '</div>'
 
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
@@ -1737,11 +1760,12 @@ st.markdown(
 # ── Top Action Bar: rata kanan ───────────────────────────────
 _spacer, _action_col = st.columns([4, 1], gap="small")
 with _action_col:
-    _ab1, _ab2, _ab3 = st.columns(3, gap="small")
+    _ab1, _ab2, _ab3, _ab4 = st.columns(4, gap="small")
     with _ab1:
         if st.button("📤 Upload", use_container_width=True, type="primary", key="btn_upload_top"):
             st.session_state.show_upload_panel = not st.session_state.get("show_upload_panel", False)
             st.session_state.show_export_panel = False
+            st.session_state.show_h_panel      = False
             st.session_state.pop("_auto_periode", None)
             st.rerun()
     with _ab2:
@@ -1754,8 +1778,21 @@ with _action_col:
         ):
             st.session_state.show_export_panel = not _export_active
             st.session_state.show_upload_panel = False
+            st.session_state.show_h_panel      = False
             st.rerun()
     with _ab3:
+        _h_active = st.session_state.get("show_h_panel", False)
+        if st.button(
+            "🔴 Tanggal Merah",
+            use_container_width=True,
+            type="primary" if _h_active else "secondary",
+            key="btn_h_top",
+        ):
+            st.session_state.show_h_panel      = not _h_active
+            st.session_state.show_upload_panel = False
+            st.session_state.show_export_panel = False
+            st.rerun()
+    with _ab4:
         if st.button("📋 Logic", use_container_width=True, type="secondary", key="btn_logic_top"):
             st.session_state.dialog_target = "logic"
             st.session_state.dialog_emp    = None
@@ -1835,6 +1872,86 @@ if st.session_state.get("show_export_panel", False):
                     unsafe_allow_html=True,
                 )
         st.markdown('</div>', unsafe_allow_html=True)
+
+# ── Panel Bulk Correction H (Tanggal Merah) ──────────────────
+if st.session_state.get("show_h_panel", False):
+    _hp_periodes = get_periodes()
+    if not _hp_periodes:
+        st.warning("⚠️ Belum ada periode tersimpan. Upload file Excel terlebih dahulu.")
+        st.session_state.show_h_panel = False
+    else:
+        st.markdown(
+            '<div class="action-panel">'
+            '<div class="action-panel-title">🔴 Bulk Correction — Hari Libur Nasional (H)</div>'
+            '<div class="action-panel-desc">'
+            'Pilih periode, tanggal merah, dan rules yang terdampak. '
+            'Sistem akan mengubah status seluruh karyawan yang cocok menjadi <b>H</b> secara massal.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        _hp1, _hp2, _hp3 = st.columns([1, 2, 2], gap="medium")
+
+        with _hp1:
+            _hp_sel_periode = st.selectbox(
+                "📅 Periode",
+                options=_hp_periodes,
+                key="hp_periode_select",
+            )
+
+        with _hp2:
+            _hp_all_dates = get_dates_in_periode(_hp_sel_periode)
+            _hp_sel_dates = st.multiselect(
+                "📆 Pilih Tanggal Merah",
+                options=_hp_all_dates,
+                placeholder="Klik untuk memilih tanggal...",
+                key="hp_dates_select",
+            )
+
+        with _hp3:
+            _hp_all_rules = get_rules_in_periode(_hp_sel_periode)
+            _hp_sel_rules = st.multiselect(
+                "🏷️ Filter Rules (kosong = semua)",
+                options=_hp_all_rules,
+                placeholder="Semua Rules",
+                key="hp_rules_select",
+            )
+
+        if _hp_sel_dates:
+            _hp_rules_display = (
+                ", ".join(_hp_sel_rules) if _hp_sel_rules else "**semua rules**"
+            )
+            st.info(
+                f"ℹ️ Akan mengubah status menjadi **H** pada **{len(_hp_sel_dates)} tanggal** "
+                f"yang dipilih untuk {_hp_rules_display}."
+            )
+            _hpc1, _hpc2 = st.columns([1, 5])
+            with _hpc1:
+                if st.button(
+                    "✅ Terapkan",
+                    type="primary",
+                    use_container_width=True,
+                    key="btn_apply_h",
+                ):
+                    with st.spinner("⚙️ Menerapkan koreksi..."):
+                        _hp_n = bulk_update_h(
+                            _hp_sel_periode,
+                            _hp_sel_dates,
+                            _hp_sel_rules if _hp_sel_rules else None,
+                        )
+                    st.cache_data.clear()
+                    st.success(
+                        f"✅ **{_hp_n} record** berhasil diupdate ke **H** "
+                        f"pada {len(_hp_sel_dates)} tanggal di periode {_hp_sel_periode}."
+                    )
+        else:
+            st.markdown(
+                '<div style="background:#f1f5f9;border-radius:10px;padding:0.8rem 1.2rem;'
+                'color:#64748b;font-size:0.85rem;">'
+                '⬅️ Pilih tanggal merah terlebih dahulu</div>',
+                unsafe_allow_html=True,
+            )
+        st.markdown('</div>', unsafe_allow_html=True)
+
 
 # ── Ambil daftar periode ──────────────────────────────────────
 periodes_tersedia = get_periodes()
@@ -2288,11 +2405,11 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             "half_wfa": "1/2 WFA",
             "wfs": "WFS",
             "dw": "DW", "k_sick": "K", "off_count": "Off",
-            "hl": "HL", "ml": "ML", "wml": "WML", "ot": "OT", "rl": "RL",
+            "hl": "HL", "ml": "ML", "wml": "WML", "ot": "OT", "rl": "RL", "h_count": "H",
         })
         for col in ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
                     "WFA", "1/2 WFA", "WFS", "DW", "K", "Off",
-                    "HL", "ML", "WML", "OT", "RL"]:
+                    "HL", "ML", "WML", "OT", "RL","H"]:
             if col not in df_result.columns:
                 df_result[col] = 0
         file_bytes = None
@@ -2333,6 +2450,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     total_wml  = int(df_result["WML"].sum()) if "WML" in df_result.columns else 0
     total_ot   = int(df_result["OT"].sum())  if "OT"  in df_result.columns else 0
     total_rl   = int(df_result["RL"].sum()) if "RL" in df_result.columns else 0
+    total_h    = int(df_result["H"].sum())  if "H"  in df_result.columns else 0
     total_e    = stats["employees"]
 
     st.markdown(f"""
@@ -2405,7 +2523,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     <div class="sub">Rest / Not scheduled</div>
   </div>
 </div>
-<div class="metric-row" style="margin-top:-1rem;grid-template-columns: repeat(5, 1fr);">
+<div class="metric-row" style="margin-top:-1rem;grid-template-columns: repeat(6, 1fr);">
   <div class="metric-card metric-hl">
     <div class="label"><span>💍</span> HL</div>
     <div class="value">{total_hl:,}</div>
@@ -2430,6 +2548,11 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     <div class="label"><span>📅</span> RL</div>
     <div class="value">{total_rl:,}</div>
     <div class="sub">Roster Leave</div>
+  </div>
+  <div class="metric-card metric-h">
+    <div class="label"><span>🔴</span> H</div>
+    <div class="value">{total_h:,}</div>
+    <div class="sub">Tanggal Merah</div>
   </div>
 </div>
 """, unsafe_allow_html=True)

@@ -206,7 +206,9 @@ def get_rekap(periode: str):
                 SUM(CASE WHEN a.status_klasifikasi = 'OT'
                          THEN 1 ELSE 0 END) AS ot,
                 SUM(CASE WHEN a.status_klasifikasi = 'RL'
-                         THEN 1 ELSE 0 END) AS rl
+                         THEN 1 ELSE 0 END) AS rl,
+                SUM(CASE WHEN a.status_klasifikasi = 'H'
+                         THEN 1 ELSE 0 END) AS h_count
             FROM karyawan k
             JOIN absensi_harian a ON a.karyawan_id = k.id
             WHERE a.periode = ?
@@ -305,3 +307,82 @@ def update_absensi_row(
                 tanggal,
             ),
         )
+
+def get_dates_in_periode(periode: str) -> list[str]:
+    """Return daftar tanggal unik (sorted) dalam satu periode."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT DISTINCT tanggal FROM absensi_harian
+               WHERE periode = ? AND is_deleted = 0
+               ORDER BY tanggal""",
+            (periode,),
+        ).fetchall()
+    return [r["tanggal"] for r in rows]
+
+
+def get_rules_in_periode(periode: str) -> list[str]:
+    """Return daftar rules unik (sorted) dalam satu periode."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT DISTINCT k.rules FROM karyawan k
+               JOIN absensi_harian a ON a.karyawan_id = k.id
+               WHERE a.periode = ? AND a.is_deleted = 0
+               ORDER BY k.rules""",
+            (periode,),
+        ).fetchall()
+    return [r["rules"] for r in rows if r["rules"]]
+
+
+def bulk_update_h(
+    periode: str,
+    tanggal_list: list[str],
+    rules_filter: list[str] | None = None,
+) -> int:
+    """
+    Set status_klasifikasi = 'H' dan is_manual_override = 1 secara massal.
+
+    Args:
+        periode       : periode absensi (e.g. "2026-05")
+        tanggal_list  : list tanggal format "YYYY-MM-DD"
+        rules_filter  : list rules yang difilter; None = semua rules
+
+    Returns:
+        Jumlah record yang berhasil diupdate.
+    """
+    if not tanggal_list:
+        return 0
+
+    with get_conn() as conn:
+        ph_t = ",".join("?" * len(tanggal_list))
+
+        if rules_filter:
+            ph_r = ",".join("?" * len(rules_filter))
+            kid_rows = conn.execute(
+                f"SELECT id FROM karyawan WHERE rules IN ({ph_r})",
+                rules_filter,
+            ).fetchall()
+            kids = [r["id"] for r in kid_rows]
+            if not kids:
+                return 0
+            ph_k = ",".join("?" * len(kids))
+            cur = conn.execute(
+                f"""UPDATE absensi_harian
+                       SET status_klasifikasi = 'H',
+                           is_manual_override = 1
+                     WHERE periode = ?
+                       AND tanggal IN ({ph_t})
+                       AND karyawan_id IN ({ph_k})
+                       AND is_deleted = 0""",
+                [periode] + tanggal_list + kids,
+            )
+        else:
+            cur = conn.execute(
+                f"""UPDATE absensi_harian
+                       SET status_klasifikasi = 'H',
+                           is_manual_override = 1
+                     WHERE periode = ?
+                       AND tanggal IN ({ph_t})
+                       AND is_deleted = 0""",
+                [periode] + tanggal_list,
+            )
+        return cur.rowcount
