@@ -712,10 +712,10 @@ def _get_all_daily_from_db(periode):
 @st.dialog("📋 Rincian Harian Karyawan", width="large", dismissible=False)
 def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
     with st.spinner("⏳ Memuat rincian harian..."):
-        if file_bytes is not None:
-            detail_df, summary_df = get_employee_daily(file_bytes, account)
-        elif periode is not None:
+        if periode is not None:
             detail_df, summary_df = get_employee_daily_from_db(account, periode)
+        elif file_bytes is not None:
+            detail_df, summary_df = get_employee_daily(file_bytes, account)
         else:
             st.error("Tidak ada data yang bisa dimuat.")
             return
@@ -2377,11 +2377,17 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                 if st.session_state.get("_override_confirmed_for") == _periode:
                     soft_delete_periode(_periode)
                     st.session_state._override_confirmed_for = None
-                    st.cache_data.clear()
 
                 save_periode(df_raw, _periode)
-                st.session_state.current_periode  = _periode
+                st.session_state.current_periode     = _periode
                 st.session_state._pending_file_bytes = None
+                # Tutup panel upload & arahkan ke view DB —
+                # mencegah uploaded (yang masih di-retain Streamlit) memicu
+                # loop konfirmasi override pada render berikutnya
+                st.session_state.show_upload_panel   = False
+                st.session_state["_auto_periode"]    = _periode
+                st.cache_data.clear()
+                st.rerun()
 
         except Exception as e:
             st.warning(f"⚠️ Gagal simpan ke database: {e}")
@@ -2577,7 +2583,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
         )
         opt_cols_selected = []
         _r1 = st.columns(7)
-        _r2 = st.columns(5)
+        _r2 = st.columns(6)
         opt_col_ui = _r1 + _r2
         for i, (key, label, desc) in enumerate(OPTIONAL_COLS_DEF):
             with opt_col_ui[i]:
@@ -2683,10 +2689,12 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     )
 
     with st.spinner("⚙️ Menyiapkan data kalender..."):
-        if file_bytes is not None:
+        if current_periode:
+            df_daily_cal = _get_all_daily_from_db(current_periode)
+        elif file_bytes is not None:
             df_daily_cal = get_all_daily_for_calendar(file_bytes)
         else:
-            df_daily_cal = _get_all_daily_from_db(current_periode)
+            df_daily_cal = pd.DataFrame()
 
     dcol1, dcol2, dcol3 = st.columns([1, 1, 2])
 
