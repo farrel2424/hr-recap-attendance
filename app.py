@@ -1175,7 +1175,12 @@ def export_multi_period_bytes(selected_periods: list) -> bytes:
 # Definisi kolom tampilan tabel
 # ──────────────────────────────────────────────────────────────
 
-CORE_COLS = ["No.", "Nama", "Account", "Rules", "S", "Late", "1/2 UL", "UL", "DW"]
+CORE_COLS = [
+    "No.", "Nama", "Account", "Rules",
+    "S", "Late", "1/2 UL", "UL", "DW",
+    "K", "AL", "1/2 AL", "WFA", "1/2 WFA", "WFS", "Off",
+    "HL", "ML", "WML", "OT", "RL", "H",
+]
 
 OPTIONAL_COLS_DEF = [
     ("K",      "💊 K (Sakit)",   "Sakit dgn Surat"),
@@ -1758,9 +1763,9 @@ st.markdown(
 )
 
 # ── Top Action Bar: rata kanan ───────────────────────────────
-_spacer, _action_col = st.columns([4, 1], gap="small")
+_spacer, _action_col = st.columns([2, 3], gap="medium")
 with _action_col:
-    _ab1, _ab2, _ab3, _ab4 = st.columns(4, gap="small")
+    _ab1, _ab2, _ab3, _ab4 = st.columns(4, gap="medium")
     with _ab1:
         if st.button("📤 Upload", use_container_width=True, type="primary", key="btn_upload_top"):
             st.session_state.show_upload_panel = not st.session_state.get("show_upload_panel", False)
@@ -1783,7 +1788,7 @@ with _action_col:
     with _ab3:
         _h_active = st.session_state.get("show_h_panel", False)
         if st.button(
-            "🔴 Tanggal Merah",
+            "🔴 National Holiday",
             use_container_width=True,
             type="primary" if _h_active else "secondary",
             key="btn_h_top",
@@ -2587,11 +2592,16 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
         opt_col_ui = _r1 + _r2
         for i, (key, label, desc) in enumerate(OPTIONAL_COLS_DEF):
             with opt_col_ui[i]:
-                checked = st.checkbox(label, value=False, help=desc, key=f"col_{key}")
+                checked = st.checkbox(label, value=True, help=desc, key=f"col_{key}")
                 if checked:
                     opt_cols_selected.append(key)
 
-    visible_cols = CORE_COLS + opt_cols_selected
+    seen = set()
+    visible_cols = []
+    for c in CORE_COLS + opt_cols_selected:
+        if c not in seen:
+            seen.add(c)
+            visible_cols.append(c)
 
     df_show = df_result.copy()
     if sel_rules:
