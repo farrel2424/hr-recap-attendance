@@ -2302,6 +2302,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
 
         _periode  = None
         _save_ok  = True
+        _save_done = False
         try:
             import io as _io, re as _re, pandas as _pd
             _buf = _io.BytesIO(file_bytes)
@@ -2379,21 +2380,20 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                     st.session_state._override_confirmed_for = None
 
                 save_periode(df_raw, _periode)
-                st.session_state.current_periode     = _periode
-                st.session_state._pending_file_bytes = None
-                # Tutup panel upload & arahkan ke view DB —
-                # mencegah uploaded (yang masih di-retain Streamlit) memicu
-                # loop konfirmasi override pada render berikutnya
-                st.session_state.show_upload_panel   = False
-                st.session_state["_auto_periode"]    = _periode
-                st.cache_data.clear()
-                st.rerun()
+                _save_done = True   # ← tandai sukses, navigasi di luar try
 
         except Exception as e:
             st.warning(f"⚠️ Gagal simpan ke database: {e}")
 
         # Jika perlu konfirmasi, tampilkan sekarang lalu stop
-        if not _save_ok:
+        if _save_done:
+            st.session_state.current_periode     = _periode
+            st.session_state._pending_file_bytes = None
+            st.session_state.show_upload_panel   = False
+            st.session_state["_auto_periode"]    = _periode
+            st.cache_data.clear()
+            st.rerun()
+        elif not _save_ok:
             st.rerun()
 
     else:
