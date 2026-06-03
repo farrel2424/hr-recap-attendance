@@ -751,254 +751,6 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
 
     st.markdown("<div style='margin-top:1.2rem'></div>", unsafe_allow_html=True)
 
-    def _menit_lebih_awal(row):
-        s_end      = parse_shift_end(row["Shift"])
-        s_start    = parse_shift_start(row["Shift"])
-        jam_keluar = parse_time_to_minutes(row["Jam Keluar"])
-        if s_end is None or jam_keluar is None:
-            return "--"
-        if s_start is not None and s_end < s_start:
-            s_end += 1440
-            if jam_keluar < s_start:
-                jam_keluar += 1440
-        diff = s_end - jam_keluar
-        if diff <= 0:
-            return "--"
-        h, m = divmod(diff, 60)
-        return f"{h}j {m}m" if h > 0 else f"{m} mnt"
-
-    late_df   = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "Late"))].copy()
-    k_df      = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "1/2 UL"))].copy()
-    ul_df     = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "UL"))].copy()
-    al_df     = detail_df[detail_df["Klasifikasi_raw"].apply(
-        lambda x: has_status(x, "AL") or has_status(x, "1/2 AL"))].copy()
-    wfa_df    = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "WFA"))].copy()
-    half_wfa_df = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "1/2 WFA"))].copy()
-    wfs_df    = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "WFS"))].copy()
-    dw_df     = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "DW"))].copy()
-    k_sick_df = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "K"))].copy()
-    hl_df     = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "HL"))].copy()
-    ml_df     = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "ML"))].copy()
-    wml_df    = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "WML"))].copy()
-    ot_df     = detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "OT"))].copy()
-
-    n_late   = len(late_df)
-    n_k      = len(k_df)
-    n_ul     = len(ul_df)
-    n_al     = len(al_df)
-    n_wfa    = len(wfa_df)
-    n_hwfa   = len(half_wfa_df)
-    n_wfs    = len(wfs_df)
-    n_dw     = len(dw_df)
-    n_k_sick = len(k_sick_df)
-    n_hl     = len(hl_df)
-    n_ml     = len(ml_df)
-    n_wml    = len(wml_df)
-    n_ot     = len(ot_df)
-
-    with st.expander(
-        f"⚠️ Pelanggaran Jam Kerja  —  🕐 Late: {n_late}  |  ⛔ 1/2 UL: {n_k}  |  📋 UL: {n_ul}",
-        expanded=False,
-    ):
-        if n_late == 0 and n_k == 0 and n_ul == 0:
-            st.success("✅ Tidak ada pelanggaran jam kerja pada periode ini.")
-        else:
-            mc1, mc2, mc3 = st.columns(3)
-            with mc1:
-                st.markdown(
-                    f'<div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:10px;'
-                    f'padding:.8rem 1.1rem;text-align:center;margin-bottom:.8rem;">'
-                    f'<div style="font-size:0.72rem;color:#92400e;font-weight:600;text-transform:uppercase;">'
-                    f'🕐 Late (terlambat 1-120 mnt)</div>'
-                    f'<div style="font-size:1.7rem;font-weight:700;color:#d97706;">'
-                    f'{n_late}<span style="font-size:.9rem"> hari</span></div></div>',
-                    unsafe_allow_html=True,
-                )
-            with mc2:
-                st.markdown(
-                    f'<div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:10px;'
-                    f'padding:.8rem 1.1rem;text-align:center;margin-bottom:.8rem;">'
-                    f'<div style="font-size:0.72rem;color:#991b1b;font-weight:600;text-transform:uppercase;">'
-                    f'⛔ 1/2 UL (terlambat &gt;120 mnt / UL ½ hari)</div>'
-                    f'<div style="font-size:1.7rem;font-weight:700;color:#dc2626;">'
-                    f'{n_k}<span style="font-size:.9rem"> hari</span></div></div>',
-                    unsafe_allow_html=True,
-                )
-            with mc3:
-                st.markdown(
-                    f'<div style="background:#f0fdfa;border-left:4px solid #14b8a6;border-radius:10px;'
-                    f'padding:.8rem 1.1rem;text-align:center;margin-bottom:.8rem;">'
-                    f'<div style="font-size:0.72rem;color:#0f766e;font-weight:600;text-transform:uppercase;">'
-                    f'📋 UL (Unpaid Leave penuh)</div>'
-                    f'<div style="font-size:1.7rem;font-weight:700;color:#0f766e;">'
-                    f'{n_ul}<span style="font-size:.9rem"> hari</span></div></div>',
-                    unsafe_allow_html=True,
-                )
-
-            combined = pd.concat([late_df, k_df, ul_df]).sort_values("Tanggal").reset_index(drop=True)
-            combined = combined.drop_duplicates(subset=["Tanggal"]).reset_index(drop=True)
-            combined["No."]         = range(1, len(combined) + 1)
-            combined["Lebih Awal"]  = combined.apply(_menit_lebih_awal, axis=1)
-            st.dataframe(
-                combined[["No.", "Tanggal", "Klasifikasi", "Shift", "Jam Masuk", "Jam Keluar", "Lebih Awal"]],
-                width="stretch",
-                height=min(60 + len(combined) * 35, 380),
-                hide_index=True,
-                column_config={
-                    "Lebih Awal": st.column_config.TextColumn("Pulang Lebih Awal", width="medium"),
-                },
-            )
-
-    with st.expander(
-        f"🏥 DW & Sakit  —  🚫 DW: {n_dw}  |  💊 K-Sick: {n_k_sick}",
-        expanded=False,
-    ):
-        if n_dw == 0 and n_k_sick == 0:
-            st.info("ℹ️ Tidak ada data DW / K-Sick pada periode ini.")
-        else:
-            dc1, dc2 = st.columns(2)
-            with dc1:
-                st.markdown(
-                    f'<div style="background:#fff7ed;border-left:4px solid #f97316;border-radius:10px;'
-                    f'padding:.8rem 1.1rem;text-align:center;margin-bottom:.8rem;">'
-                    f'<div style="font-size:0.72rem;color:#9a3412;font-weight:600;text-transform:uppercase;">🚫 DW (Absence)</div>'
-                    f'<div style="font-size:1.7rem;font-weight:700;color:#ea580c;">'
-                    f'{n_dw}<span style="font-size:.9rem"> hari</span></div></div>',
-                    unsafe_allow_html=True,
-                )
-            with dc2:
-                st.markdown(
-                    f'<div style="background:#fdf2f8;border-left:4px solid #ec4899;border-radius:10px;'
-                    f'padding:.8rem 1.1rem;text-align:center;margin-bottom:.8rem;">'
-                    f'<div style="font-size:0.72rem;color:#9d174d;font-weight:600;text-transform:uppercase;">💊 K-Sick W Letter</div>'
-                    f'<div style="font-size:1.7rem;font-weight:700;color:#db2777;">'
-                    f'{n_k_sick}<span style="font-size:.9rem"> hari</span></div></div>',
-                    unsafe_allow_html=True,
-                )
-
-            if n_dw > 0:
-                st.markdown("**🚫 DW - Tidak Hadir (Absence)**")
-                dw_df["No."] = range(1, len(dw_df) + 1)
-                st.dataframe(
-                    dw_df[["No.", "Tanggal", "Shift", "Status"]],
-                    width="stretch",
-                    height=min(60 + len(dw_df) * 35, 280),
-                    hide_index=True,
-                    column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
-                )
-            if n_k_sick > 0:
-                st.markdown("**💊 K-Sick - Sakit dengan Surat**")
-                k_sick_df["No."] = range(1, len(k_sick_df) + 1)
-                st.dataframe(
-                    k_sick_df[["No.", "Tanggal", "Shift", "Status", "Klasifikasi"]],
-                    width="stretch",
-                    height=min(60 + len(k_sick_df) * 35, 280),
-                    hide_index=True,
-                    column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
-                )
-
-    with st.expander(
-        f"🌴 Rincian Leave & WFx  —  📅 AL: {n_al}  |  🏠 WFA: {n_wfa}  |  🏡 1/2 WFA: {n_hwfa}  |  📍 WFS: {n_wfs}  |  📋 UL: {n_ul}",
-        expanded=False,
-    ):
-        if n_al == 0 and n_wfa == 0 and n_hwfa == 0 and n_wfs == 0 and n_ul == 0:
-            st.info("ℹ️ Tidak ada data AL / 1/2 AL / UL / WFA / 1/2 WFA / WFS pada periode ini.")
-        else:
-            n_full_al = len(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "AL"))])
-            n_half_al = len(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "1/2 AL"))])
-            n_half_ul = len(detail_df[detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "1/2 UL"))])
-
-            lc1, lc2, lc3, lc4, lc5, lc6, lc7 = st.columns(7)
-            for (col, label, val, bg, bc, tc) in [
-                (lc1, "🌴 AL (Full)",         n_full_al, "#fdf4ff", "#a855f7", "#7e22ce"),
-                (lc2, "🌗 1/2 AL (Setengah)", n_half_al, "#fff1f2", "#fb7185", "#be123c"),
-                (lc3, "📋 UL (Full)",          n_ul,      "#f0fdfa", "#14b8a6", "#0f766e"),
-                (lc4, "📋 1/2 UL (Setengah)",  n_half_ul, "#fef2f2", "#ef4444", "#991b1b"),
-                (lc5, "🏠 WFA (Full)",         n_wfa,     "#f0f9ff", "#0ea5e9", "#0369a1"),
-                (lc6, "🏡 1/2 WFA (Setengah)", n_hwfa,    "#eff6ff", "#60a5fa", "#1d4ed8"),
-                (lc7, "📍 WFS (Offsite)",      n_wfs,     "#eef2ff", "#6366f1", "#3730a3"),
-            ]:
-                with col:
-                    st.markdown(
-                        f'<div style="background:{bg};border-left:4px solid {bc};border-radius:10px;'
-                        f'padding:.8rem 1.1rem;text-align:center;margin-bottom:.8rem;">'
-                        f'<div style="font-size:0.72rem;color:{tc};font-weight:600;text-transform:uppercase;">{label}</div>'
-                        f'<div style="font-size:1.7rem;font-weight:700;color:{tc};">'
-                        f'{val}<span style="font-size:.9rem"> hari</span></div></div>',
-                        unsafe_allow_html=True,
-                    )
-
-            leave_combined = pd.concat([al_df, wfa_df, half_wfa_df, wfs_df, ul_df]).sort_values("Tanggal").reset_index(drop=True)
-            leave_combined = leave_combined.drop_duplicates(subset=["Tanggal"]).reset_index(drop=True)
-            leave_combined["No."] = range(1, len(leave_combined) + 1)
-            st.dataframe(
-                leave_combined[["No.", "Tanggal", "Klasifikasi", "Shift", "Jam Masuk", "Jam Keluar", "Status"]],
-                width="stretch",
-                height=min(60 + len(leave_combined) * 35, 380),
-                hide_index=True,
-                column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
-            )
-
-    with st.expander(
-        f"🪪 Cuti Khusus  —  💍 HL: {n_hl}  |  🤱 ML: {n_ml}  |  👶 WML: {n_wml}  |  📝 OT: {n_ot}",
-        expanded=False,
-    ):
-        if n_hl == 0 and n_ml == 0 and n_wml == 0 and n_ot == 0:
-            st.info("ℹ️ Tidak ada data HL / ML / WML / OT pada periode ini.")
-        else:
-            sc1, sc2, sc3, sc4 = st.columns(4)
-            for (col, label, val, bg, bc, tc) in [
-                (sc1, "💍 HL (Pernikahan)",       n_hl,  "#fffbeb", "#eab308", "#92400e"),
-                (sc2, "🤱 ML (Melahirkan)",        n_ml,  "#f0fdf4", "#4ade80", "#166534"),
-                (sc3, "👶 WML (Istri Melahirkan)", n_wml, "#f0f9ff", "#22d3ee", "#0e7490"),
-                (sc4, "📝 OT (Cuti Lainnya)",      n_ot,  "#f8fafc", "#94a3b8", "#475569"),
-            ]:
-                with col:
-                    st.markdown(
-                        f'<div style="background:{bg};border-left:4px solid {bc};border-radius:10px;'
-                        f'padding:.8rem 1.1rem;text-align:center;margin-bottom:.8rem;">'
-                        f'<div style="font-size:0.72rem;color:{tc};font-weight:600;text-transform:uppercase;">{label}</div>'
-                        f'<div style="font-size:1.7rem;font-weight:700;color:{tc};">'
-                        f'{val}<span style="font-size:.9rem"> hari</span></div></div>',
-                        unsafe_allow_html=True,
-                    )
-
-            special_combined = pd.concat([hl_df, ml_df, wml_df, ot_df]).sort_values("Tanggal").reset_index(drop=True)
-            special_combined = special_combined.drop_duplicates(subset=["Tanggal"]).reset_index(drop=True)
-            special_combined["No."] = range(1, len(special_combined) + 1)
-            st.dataframe(
-                special_combined[["No.", "Tanggal", "Klasifikasi", "Shift", "Jam Masuk", "Jam Keluar", "Status"]],
-                width="stretch",
-                height=min(60 + len(special_combined) * 35, 380),
-                hide_index=True,
-                column_config={"Status": st.column_config.TextColumn("Attendance Results", width="large")},
-            )
-
-    with st.expander(f"📑 Detail Lengkap per Hari  —  {len(detail_df)} hari tercatat", expanded=False):
-        dd = detail_df.copy()
-        dd["Jam Kerja"] = dd["Jam Kerja"].apply(lambda x: f"{x:.1f} jam" if x > 0 else "-")
-
-        _detail_cols = ["No.", "Tanggal", "Shift", "Jam Masuk", "Jam Keluar",
-                        "Status", "Klasifikasi", "Jam Kerja"]
-        _detail_col_cfg: dict = {
-            "Status": st.column_config.TextColumn("Status Absensi", width="large"),
-        }
-        if "Manual_Override" in dd.columns:
-            dd["✏️"] = dd["Manual_Override"].apply(lambda x: "✏️" if x else "")
-            _detail_cols.append("✏️")
-            _detail_col_cfg["✏️"] = st.column_config.TextColumn("Override", width="small")
-        if "Catatan" in dd.columns:
-            _detail_cols.append("Catatan")
-            _detail_col_cfg["Catatan"] = st.column_config.TextColumn("📝 Catatan", width="large")
-
-        st.dataframe(
-            dd[_detail_cols],
-            width="stretch",
-            height=420,
-            hide_index=True,
-            column_config=_detail_col_cfg,
-        )
-
     # ── Edit Data Karyawan & Absensi Harian ──────────────────────────────
     if periode is not None:
         st.markdown(
@@ -1582,7 +1334,7 @@ _LOGIC_HTML = (
     '<tr>'
     '<td style="padding:0.4rem 0.7rem;">📍 WFS</td>'
     '<td style="padding:0.4rem 0.7rem;"><code>Attendance results</code> + <code>Offsite(Hour)</code></td>'
-    '<td style="padding:0.4rem 0.7rem;">att = <b>"Normal (Offsite)"</b> DAN Offsite(Hour) &ne; "--"/kosong</td>'
+    '<td style="padding:0.4rem 0.7rem;">att = <b>"Normal（Offsite）"</b> atau <b>"Normal（Correction of missed punch、Offsite）"</b> DAN Offsite(Hour) &ne; "--"/kosong</td>'
     '</tr>'
     '<tr style="background:#f1f5f9;">'
     '<td style="padding:0.4rem 0.7rem;">🏠 WFA</td>'
@@ -1690,8 +1442,11 @@ _LOGIC_HTML = (
     '<tr>'
     '<td style="padding:0.4rem 0.7rem;font-weight:600;white-space:nowrap;">📍 WFS</td>'
     '<td style="padding:0.4rem 0.7rem;">'
-    'Att Results = <b>tepat</b> <code>"Normal (Offsite)"</code> <b>DAN</b> '
+    'Att Results = <b>tepat</b> <code>"Normal（Offsite）"</code> atau '
+    '<code>"Normal（Correction of missed punch、Offsite）"</code> <b>DAN</b> '
     'kolom <code>Offsite(Hour)</code> berisi nilai apapun selain <code>"--"</code> / kosong. '
+    'Catatan: menggunakan tanda kurung full-width <code>（）</code> khas output Excel, '
+    'bukan ASCII <code>()</code>. '
     'Dicek <b>sebelum</b> skip-shift agar tidak terlewat meski shift kosong.</td>'
     '</tr>'
 
@@ -1800,7 +1555,7 @@ _LOGIC_HTML = (
     'padding:0.8rem 1rem;font-family:monospace;font-size:0.78rem;line-height:2.1;'
     'margin-bottom:1.2rem;color:#475569;">'
     '1.  🏖️ Att = "Normal (rest)" / "Normal (not scheduled)" &rarr; <b>Off</b> &mdash; selesai<br>'
-    '2.  📍 Att = "Normal (Offsite)" DAN Offsite(Hour) &ne; "--"/kosong &rarr; <b>WFS</b> &mdash; selesai<br>'
+    '2.  📍 Att = <code>"Normal（Offsite）"</code> atau <code>"Normal（Correction of missed punch、Offsite）"</code> DAN Offsite(Hour) &ne; "--"/kosong &rarr; <b>WFS</b> &mdash; selesai<br>'
     '3.  ⏭️ Shift = Rest / Not scheduled / kosong / "--" &rarr; <b>dilewati engine</b>, tampil sebagai <b>❓ None</b><br>'
     '4.  💊 Kolom K-Sick W Letter &ne; "0" dan "--" &rarr; <b>K</b> &mdash; selesai<br>'
     '5.  🚫 Kolom Number of absences(Count) &ne; "0" dan "--" &rarr; <b>DW</b> &mdash; selesai<br>'
@@ -1869,6 +1624,15 @@ _LOGIC_HTML = (
     '- Hasil: satu file <code>.xlsx</code> dengan <b>sheet terpisah per periode</b> — tanpa perlu upload ulang<br>'
     '- Data diambil langsung dari database melalui <code>_get_all_daily_from_db()</code><br>'
     '- Fungsi internal <code>_populate_calendar_ws()</code> dipakai bersama oleh export reguler dan multi-periode<br>'
+    '<b>8. 🖱️ Fix Dialog "Rincian Harian Karyawan" (Bug Fix):</b><br>'
+    '- <b>Root cause:</b> <code>st.rerun()</code> eksplisit dipanggil setelah set <code>dialog_target = "detail"</code>, '
+    'menyebabkan blok <code>else</code> me-reset state sebelum dialog sempat dirender<br>'
+    '- <b>Fix:</b> Hapus <code>st.rerun()</code> dari blok seleksi baris — <code>on_select="rerun"</code> '
+    'sudah men-trigger rerun otomatis, tidak perlu rerun kedua<br>'
+    '- Sederhanakan kondisi: dialog dibuka untuk baris apapun yang dipilih, '
+    'kecuali dialog employee yang sama sudah di-close secara eksplisit (<code>dialog_target == "closed"</code>)<br>'
+    '- Hapus blok <code>else</code> yang me-reset <code>dialog_target = None</code> saat tidak ada baris dipilih, '
+    'karena dialog mengelola lifecycle-nya sendiri setelah dibuka<br><br>'
     '</div>'
 
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
@@ -2115,6 +1879,9 @@ if st.session_state.get("show_upload_panel", False):
 # ── Handle auto-pilih periode dari tombol "Buka" di tabel ────
 if st.session_state.get("_auto_periode") and periode_dipilih == _NEW_PERIODE_SENTINEL:
     periode_dipilih = st.session_state.pop("_auto_periode")
+
+if periode_dipilih == _NEW_PERIODE_SENTINEL and st.session_state.get("current_periode"):
+    periode_dipilih = st.session_state.current_periode
 
 # ── Default View: Tabel Riwayat Periode ──────────────────────
 if not st.session_state.get("show_upload_panel", False) and uploaded is None and periode_dipilih == _NEW_PERIODE_SENTINEL:
@@ -2746,15 +2513,12 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                 "rules"  : emp["Rules"],
                 "periode": current_periode,
             }
-            if st.session_state.dialog_target == "closed" and st.session_state.dialog_emp == new_emp:
-                pass
-            elif st.session_state.dialog_emp != new_emp or st.session_state.dialog_target != "detail":
+            if not (
+                st.session_state.dialog_target == "closed"
+                and st.session_state.dialog_emp == new_emp
+            ):
                 st.session_state.dialog_target = "detail"
                 st.session_state.dialog_emp    = new_emp
-                st.rerun()
-    else:
-        st.session_state.dialog_target = None
-        st.session_state.dialog_emp    = None
 
     if st.session_state.dialog_target == "logic":
         st.session_state.dialog_target = None
