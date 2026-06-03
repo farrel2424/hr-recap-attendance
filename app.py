@@ -330,8 +330,27 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 }
 .streamlit-expanderHeader { font-weight: 600 !important; }
 #MainMenu, footer { visibility: hidden; }
+
+/* ── Sticky Column — override st.dataframe internal ── */
+/* Freeze kolom No. dan Nama di st.dataframe */
+[data-testid="stDataFrame"] [data-testid="glideDataEditor"] .dvn-scroller {
+    overflow-x: auto !important;
+}
+/* Header sticky row */
+[data-testid="stDataFrame"] canvas {
+    /* glide-data-grid menggunakan canvas — tidak bisa di-CSS */
+}
+
+/* Wrapper: beri tinggi tetap agar scroll vertikal aktif */
+[data-testid="stDataFrame"] > div {
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+}
+
 </style>
 """, unsafe_allow_html=True)
+
 
 
 def _find_col(df: pd.DataFrame, prefix: str) -> str | None:
@@ -2628,6 +2647,8 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
         (f"  |  Kolom tersembunyi: {', '.join(hidden)}" if hidden else "")
     )
 
+    current_periode = st.session_state.get("current_periode") or _periode
+
     sel_event = st.dataframe(
         df_show[visible_cols],
         width="stretch",
@@ -2636,7 +2657,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
         on_select="rerun",
         selection_mode="single-row",
         column_config={k: v for k, v in COL_CONFIG_ALL.items() if k in visible_cols},
-        key="df_summary_table",
+        key=f"df_summary_table_{st.session_state.df_key_suffix}",
     )
 
     current_periode = st.session_state.get("current_periode") or _periode
