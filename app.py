@@ -256,7 +256,7 @@ html, body, [class*="css"] { font-family: 'DM Sans', -apple-system, BlinkMacSyst
 
 /* ── Metric Cards ── */
 .metric-row {
-    display: grid; grid-template-columns: repeat(5, 1fr);
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 1rem; margin: 2rem 0 2.5rem;
 }
 .metric-card {
@@ -341,6 +341,19 @@ html, body, [class*="css"] { font-family: 'DM Sans', -apple-system, BlinkMacSyst
 .streamlit-expanderHeader { font-weight: 600 !important; }
 #MainMenu, footer { visibility: hidden; }
 
+/* ── Responsive Breakpoints ── */
+@media (max-width: 900px) {
+    .main .block-container { padding: 1rem 1.2rem 3rem; }
+    .app-header { padding: 1.5rem 1.5rem; }
+    .app-header h1 { font-size: 1.5rem; }
+    .metric-card .value { font-size: 1.7rem; }
+}
+@media (max-width: 600px) {
+    .main .block-container { padding: 0.75rem 0.75rem 2rem; }
+    .metric-card .value { font-size: 1.4rem; }
+    .metric-card { padding: 1rem 1rem 0.9rem; }
+}
+
 /* ── Sticky Column — override st.dataframe internal ── */
 /* Freeze kolom No. dan Nama di st.dataframe */
 [data-testid="stDataFrame"] [data-testid="glideDataEditor"] .dvn-scroller {
@@ -356,6 +369,27 @@ html, body, [class*="css"] { font-family: 'DM Sans', -apple-system, BlinkMacSyst
     border-radius: 12px;
     overflow: hidden;
     border: 1px solid var(--border-color);
+}
+
+/* ── Keyboard Accessibility: :focus-visible ── */
+[data-testid="stButton"] > button:focus-visible,
+[data-testid="stDownloadButton"] > button:focus-visible,
+[data-testid="stFormSubmitButton"] > button:focus-visible {
+    outline: 2px solid #3b82f6 !important;
+    outline-offset: 2px !important;
+    box-shadow: 0 0 0 4px rgba(59,130,246,0.18) !important;
+}
+[data-testid="stSelectbox"] > div:focus-visible,
+[data-testid="stMultiSelect"] > div:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+    border-radius: 8px;
+}
+[data-testid="stCheckbox"] input:focus-visible ~ div,
+[data-testid="stRadio"] input:focus-visible ~ div {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+    border-radius: 4px;
 }
 
 </style>
@@ -1820,11 +1854,16 @@ st.markdown(
 )
 
 # ── Top Action Bar: rata kanan ───────────────────────────────
-_spacer, _action_col = st.columns([2, 3], gap="medium")
+_spacer, _action_col = st.columns([1, 5], gap="medium")
 with _action_col:
-    _ab1, _ab2, _ab3, _ab4 = st.columns(4, gap="medium")
+    _ab1, _ab2, _ab3, _ab4 = st.columns([3, 2, 1, 1], gap="small")
     with _ab1:
-        if st.button("📤 Upload", use_container_width=True, type="primary", key="btn_upload_top"):
+        if st.button(
+            "📤 Upload File Absensi",
+            use_container_width=True,
+            type="primary",
+            key="btn_upload_top",
+        ):
             st.session_state.show_upload_panel = not st.session_state.get("show_upload_panel", False)
             st.session_state.show_export_panel = False
             st.session_state.show_h_panel      = False
@@ -1835,7 +1874,7 @@ with _action_col:
         if st.button(
             "📥 Export",
             use_container_width=True,
-            type="primary" if _export_active else "secondary",
+            type="secondary",
             key="btn_export_top",
         ):
             st.session_state.show_export_panel = not _export_active
@@ -1845,17 +1884,24 @@ with _action_col:
     with _ab3:
         _h_active = st.session_state.get("show_h_panel", False)
         if st.button(
-            "🔴 National Holiday",
+            "🔴",
             use_container_width=True,
             type="primary" if _h_active else "secondary",
             key="btn_h_top",
+            help="National Holiday — Bulk correction tanggal merah (hari libur nasional)",
         ):
             st.session_state.show_h_panel      = not _h_active
             st.session_state.show_upload_panel = False
             st.session_state.show_export_panel = False
             st.rerun()
     with _ab4:
-        if st.button("📋 Logic", use_container_width=True, type="secondary", key="btn_logic_top"):
+        if st.button(
+            "📋",
+            use_container_width=True,
+            type="secondary",
+            key="btn_logic_top",
+            help="Logic Klasifikasi Absensi — Lihat aturan & urutan prioritas klasifikasi",
+        ):
             st.session_state.dialog_target = "logic"
             st.session_state.dialog_emp    = None
             st.rerun()
@@ -2147,7 +2193,8 @@ if not st.session_state.get("show_upload_panel", False) and uploaded is None and
 .pt-card-wrap {
     border: 1px solid var(--border-color, #334155);
     border-radius: 12px;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: visible;
     margin-bottom: 0;
 }
 .pt-row {
@@ -2207,6 +2254,23 @@ if not st.session_state.get("show_upload_panel", False) and uploaded is None and
     display: flex; align-items: center; gap: .5rem;
     margin-bottom: 1rem;
 }
+
+/* ── Responsive: period table kolom tersembunyi di layar kecil ── */
+@media (max-width: 800px) {
+    .pt-head {
+        grid-template-columns: 48px 1fr 140px !important;
+    }
+    .pt-row {
+        grid-template-columns: 48px 1fr 140px !important;
+    }
+    .pt-head-cell:nth-child(4),
+    .pt-head-cell:nth-child(5),
+    .pt-row > div:nth-child(4),
+    .pt-row > div:nth-child(5) {
+        display: none !important;
+    }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -2421,8 +2485,13 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                     soft_delete_periode(_periode)
                     st.session_state._override_confirmed_for = None
 
-                save_periode(df_raw, _periode)
-                _save_done = True   # ← tandai sukses, navigasi di luar try
+                _n_save_rows = len(df_raw)
+                with st.spinner(
+                    f"💾 Menyimpan {_n_save_rows:,} baris ke database "
+                    f"(periode {_periode})… Mohon tunggu."
+                ):
+                    save_periode(df_raw, _periode)
+                _save_done = True  # ← tandai sukses, navigasi di luar try
 
         except Exception as e:
             st.warning(f"⚠️ Gagal simpan ke database: {e}")
@@ -2511,7 +2580,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
   <span style="width:6px;height:6px;border-radius:50%;background:#3b82f6;display:inline-block;flex-shrink:0;"></span>
   Attendance
 </div>
-<div class="metric-row" style="grid-template-columns: repeat(6, 1fr);margin-top:0;">
+<div class="metric-row" style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));margin-top:0;">
   <div class="metric-card metric-shift">
     <div class="label"><span>📋</span> S (Shift)</div>
     <div class="value">{total_s:,}</div>
@@ -2548,7 +2617,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
   <span style="width:6px;height:6px;border-radius:50%;background:#a855f7;display:inline-block;flex-shrink:0;"></span>
   Leave
 </div>
-<div class="metric-row" style="grid-template-columns: repeat(7, 1fr);margin-top:0;">
+<div class="metric-row" style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));margin-top:0;">
   <div class="metric-card metric-ksick">
     <div class="label"><span>💊</span> K-Sick</div>
     <div class="value">{total_ks:,}</div>
@@ -2590,7 +2659,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
   <span style="width:6px;height:6px;border-radius:50%;background:#f59e0b;display:inline-block;flex-shrink:0;"></span>
   Special Leave
 </div>
-<div class="metric-row" style="grid-template-columns: repeat(6, 1fr);margin-top:0;">
+<div class="metric-row" style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));margin-top:0;">
   <div class="metric-card metric-hl">
     <div class="label"><span>💍</span> HL</div>
     <div class="value">{total_hl:,}</div>
