@@ -392,6 +392,29 @@ html, body, [class*="css"] { font-family: 'DM Sans', -apple-system, BlinkMacSyst
     border-radius: 4px;
 }
 
+/* ── Sub-table classes ── */
+.nt-sub-wrap {
+    margin: 0 0 0.4rem 1.5rem;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-top: 2px solid rgba(245,158,11,.35);
+    border-radius: 0 0 8px 8px;
+    overflow: hidden;
+}
+.nt-sub-head-row { background: #fffbeb; }
+.nt-sub-row-even { background: #f8fafc; }
+.nt-sub-row-odd  { background: #ffffff; }
+.nt-sub-date {
+    padding: .4rem .8rem; font-family: monospace;
+    font-size: .78rem; color: #475569; white-space: nowrap;
+}
+.nt-sub-reason { padding: .4rem .8rem; }
+@media (prefers-color-scheme: dark) {
+    .nt-sub-head-row { background: #1c1917 !important; }
+    .nt-sub-row-even { background: #1e293b !important; }
+    .nt-sub-row-odd  { background: #0f172a !important; }
+    .nt-sub-date     { color: #94a3b8 !important; }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -2999,55 +3022,274 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                     })
         _df_none = pd.DataFrame(_none_rows, columns=["Account", "Name", "Date", "Shift", "Classification", "Reason"])
 
-        _none_label = f"⚠️ Data Kosong / Tidak Terklasifikasi — {len(_df_none)} hari"
+# ── Step 1: Group _df_none per karyawan ──────────────────────────────
+# Struktur untuk outer table (ringkasan per karyawan)
+_none_grouped_rows = []
+_none_detail_map: dict[str, list[dict]] = {}  # account → list of {Date, Reason}
+
+if not _df_none.empty:
+    for _acc_g, _grp in _df_none.groupby("Account", sort=False):
+        _name_g   = _grp["Name"].iloc[0]
+        _dates_g  = sorted(_grp["Date"].tolist())
+        _n_g      = len(_dates_g)
+
+        # Preview: maks 3 tanggal pertama + "…+N lagi" jika lebih
+        _MAX_PREVIEW = 3
+        if _n_g <= _MAX_PREVIEW:
+            _preview = ", ".join(_dates_g)
+        else:
+            _preview = ", ".join(_dates_g[:_MAX_PREVIEW]) + f"  …+{_n_g - _MAX_PREVIEW} lagi"
+
+        _none_grouped_rows.append({
+            "Account"       : _acc_g,
+            "Name"          : _name_g,
+            "n_dates"       : _n_g,
+            "dates_preview" : _preview,
+        })
+
+        # Detail map: list {Date, Reason} untuk sub-tabel
+        _none_detail_map[_acc_g] = [
+            {"Date": row["Date"], "Reason": row["Reason"]}
+            for _, row in _grp.sort_values("Date").iterrows()
+        ]
+
+# Sort by n_dates descending (karyawan dengan paling banyak kosong di atas)
+_df_none_grouped = (
+    pd.DataFrame(_none_grouped_rows)
+    .sort_values("n_dates", ascending=False)
+    .reset_index(drop=True)
+    if _none_grouped_rows else pd.DataFrame(
+        columns=["Account", "Name", "n_dates", "dates_preview"]
+    )
+)
+
+        _n_emp_none  = len(_df_none_grouped)
+        _n_days_none = len(_df_none)
+        _none_label  = (
+            f"⚠️ Data Kosong / Tidak Terklasifikasi — "
+            f"{_n_emp_none} karyawan · {_n_days_none} hari"
+        )
+
         with st.expander(_none_label, expanded=False):
             if _df_none.empty:
                 st.success("✅ Semua data sudah terklasifikasi. Tidak ada baris kosong.")
             else:
                 st.markdown(
                     '<div style="font-size:0.82rem;color:#64748b;margin-bottom:0.8rem;">'
-                    'Baris-baris berikut tidak masuk klasifikasi manapun dan akan tampil '
-                    '<b>kosong (putih)</b> di kalender harian. Periksa data sumber atau '
-                    'lakukan <b>edit manual</b> melalui dialog karyawan.'
+                    'Klik <b>▼</b> di ujung kanan baris untuk melihat detail per tanggal. '
+                    'Sel kosong = tidak masuk klasifikasi manapun → tampil '
+                    '<b>putih</b> di kalender.'
                     '</div>',
                     unsafe_allow_html=True,
                 )
 
-                # Ringkasan per karyawan
-                # Tabel flat per hari — satu baris = satu hari kosong
-                _df_none_display = _df_none.sort_values(
-                    ["Date", "Name"]
-                ).reset_index(drop=True)
-                _df_none_display.insert(0, "No.", range(1, len(_df_none_display) + 1))
+                # ── CSS ─────────────────────────────────────────────────
+                st.markdown("""
+<style>
+.nt-head {
+    display: grid;
+    grid-template-columns: 36px 1fr 150px 1fr;
+    background: var(--table-header-bg, #f1f5f9);
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 10px 10px 0 0;
+    padding: 0 0.5rem;
+}
+.nt-head-cell {
+    padding: .5rem .4rem;
+    font-size: .70rem; font-weight: 700;
+    color: var(--text-faint, #94a3b8);
+    text-transform: uppercase; letter-spacing: .08em;
+}
+.nt-row-wrap {
+    border-left: 1px solid var(--border-color, #e2e8f0);
+    border-right: 1px solid var(--border-color, #e2e8f0);
+    border-bottom: 1px solid var(--border-color, #e2e8f0);
+}
+.nt-row {
+    display: grid;
+    grid-template-columns: 36px 1fr 150px 1fr;
+    padding: 0 0.5rem;
+    align-items: center;
+    background: var(--bg-primary, #ffffff);
+    min-height: 52px;
+    position: relative;
+    transition: background .12s;
+}
+.nt-row::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 20%; bottom: 20%;
+    width: 3px; border-radius: 0 2px 2px 0;
+    background: #f59e0b; opacity: .6;
+}
+.nt-num {
+    font-size: .75rem; color: var(--text-faint, #94a3b8);
+    font-family: monospace; text-align: center;
+}
+.nt-name {
+    font-weight: 600; font-size: .88rem;
+    color: var(--text-primary, #0f172a);
+}
+.nt-cell { padding: .65rem .4rem; }
+.nt-account-val {
+    font-size: .75rem; color: var(--text-faint, #94a3b8);
+    font-family: monospace; padding: .65rem .4rem;
+}
+.nt-badge-days {
+    display: inline-flex; align-items: center; gap: .3rem;
+    background: #fef3c7; color: #92400e;
+    border: 1px solid rgba(252,211,77,.4);
+    padding: .18rem .6rem; border-radius: 20px;
+    font-size: .72rem; font-weight: 700; font-family: monospace;
+}
+.nt-dates-text {
+    font-size: .71rem; color: var(--text-faint, #94a3b8);
+    font-family: monospace; margin-top: .12rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@media (prefers-color-scheme: dark) {
+    .nt-head     { background: var(--table-header-bg, #1e293b); }
+    .nt-row      { background: var(--bg-secondary, #1e293b); }
+    .nt-badge-days { background: #451a03; color: #fcd34d;
+                     border-color: rgba(146,64,14,.5); }
+}
+</style>
+""", unsafe_allow_html=True)
 
-                _n_emp_none = _df_none["Account"].nunique()
+                # ── Header ──────────────────────────────────────────────
+                _nt_hcol, _nt_hbtn = st.columns([11, 1])
+                with _nt_hcol:
+                    st.markdown(
+                        '<div class="nt-head">'
+                        '<div class="nt-head-cell">#</div>'
+                        '<div class="nt-head-cell">Nama</div>'
+                        '<div class="nt-head-cell">Account</div>'
+                        '<div class="nt-head-cell">Tanggal Kosong</div>'
+                        '</div>',
+                        unsafe_allow_html=True,
+                    )
+                with _nt_hbtn:
+                    st.markdown(
+                        '<div style="min-height:1px"></div>',
+                        unsafe_allow_html=True,
+                    )
 
-                st.dataframe(
-                    _df_none_display[["No.", "Date", "Name", "Account", "Shift", "Reason"]],
-                    width="stretch",
-                    hide_index=True,
-                    height=min(60 + len(_df_none_display) * 35, 480),
-                    column_config={
-                        "No."     : st.column_config.NumberColumn(
-                            "No.", width="small"),
-                        "Date"    : st.column_config.TextColumn(
-                            "📅 Tanggal", width="small"),
-                        "Name"    : st.column_config.TextColumn(
-                            "👤 Nama", width="medium"),
-                        "Account" : st.column_config.TextColumn(
-                            "Account", width="small"),
-                        "Shift"   : st.column_config.TextColumn(
-                            "⏰ Shift", width="medium"),
-                        "Reason"  : st.column_config.TextColumn(
-                            "💬 Keterangan", width="large"),
-                    },
-                )
+                # ── Bersihkan toggle keys periode lama ──────────────────
+                _valid_tkeys = {
+                    "_nt_exp_" + "".join(
+                        c if c.isalnum() else "_" for c in str(r["Account"])
+                    )
+                    for _, r in _df_none_grouped.iterrows()
+                }
+                for _stale in [
+                    k for k in list(st.session_state.keys())
+                    if k.startswith("_nt_exp_") and k not in _valid_tkeys
+                ]:
+                    del st.session_state[_stale]
+
+                # ── Helper badge reason (didefinisikan sekali di luar loop) ──
+                def _reason_badge(reason: str) -> str:
+                    r = str(reason)
+                    if "dilewati" in r:
+                        bg, fg = "#dbeafe", "#1e40af"
+                    elif "tidak tercatat" in r:
+                        bg, fg = "#fee2e2", "#991b1b"
+                    elif "tidak dikenali" in r:
+                        bg, fg = "#fef3c7", "#92400e"
+                    else:
+                        bg, fg = "#f1f5f9", "#475569"
+                    return (
+                        f'<span style="display:inline-flex;align-items:center;'
+                        f'background:{bg};color:{fg};padding:.15rem .6rem;'
+                        f'border-radius:4px;font-size:.72rem;font-weight:500;">'
+                        f'{reason}</span>'
+                    )
+                # ── Rows ────────────────────────────────────────────────
+                for _ri, _er in _df_none_grouped.iterrows():
+                    _acc_e  = _er["Account"]
+                    _name_e = _er["Name"]
+                    _n_e    = int(_er["n_dates"])
+                    _prev_e = _er["dates_preview"]
+
+                    _tkey = "_nt_exp_" + "".join(
+                        c if c.isalnum() else "_" for c in _acc_e
+                    )
+                    if _tkey not in st.session_state:
+                        st.session_state[_tkey] = False
+                    _is_open = st.session_state[_tkey]
+
+                    _rcol, _rbtn = st.columns([11, 1])
+                    with _rcol:
+                        st.markdown(
+                            f'<div class="nt-row-wrap"><div class="nt-row">'
+                            f'<div class="nt-num">{_ri + 1}</div>'
+                            f'<div class="nt-cell">'
+                            f'  <span class="nt-name">{_name_e}</span>'
+                            f'</div>'
+                            f'<div class="nt-account-val">{_acc_e}</div>'
+                            f'<div class="nt-cell">'
+                            f'  <span class="nt-badge-days">📅 {_n_e} hari</span>'
+                            f'  <div class="nt-dates-text">{_prev_e}</div>'
+                            f'</div>'
+                            f'</div></div>',
+                            unsafe_allow_html=True,
+                        )
+                    with _rbtn:
+                        if st.button(
+                            "▲" if _is_open else "▼",
+                            key=f"btn_nt_{_acc_e}",
+                            use_container_width=True,
+                            help=f"{'Tutup' if _is_open else 'Lihat detail'} {_name_e}",
+                        ):
+                            st.session_state[_tkey] = not _is_open
+                            st.rerun()
+
+                    # ── Step 3: sub-table akan ditambahkan di sini ──────
+                    if _is_open:
+                        _detail_rows = _none_detail_map.get(_acc_e, [])
+                        if _detail_rows:
+                            _rows_html = ""
+                            for _si, _sd in enumerate(_detail_rows):
+                                _row_cls = "nt-sub-row-even" if _si % 2 == 0 else "nt-sub-row-odd"
+                                _rows_html += (
+                                    f'<tr class="{_row_cls}">'
+                                    f'<td class="nt-sub-date">{_sd["Date"]}</td>'
+                                    f'<td class="nt-sub-reason">'
+                                    f'{_reason_badge(_sd["Reason"])}</td>'
+                                    f'</tr>'
+                                )
+
+                            st.markdown(
+                                f'<div class="nt-sub-wrap">'
+                                f'<table style="width:100%;border-collapse:collapse;">'
+                                f'<thead>'
+                                f'<tr class="nt-sub-head-row">'
+                                f'<th style="padding:.38rem .8rem;text-align:left;'
+                                f'font-size:.69rem;font-weight:700;color:#94a3b8;'
+                                f'text-transform:uppercase;letter-spacing:.08em;width:130px;">'
+                                f'📅 Tanggal</th>'
+                                f'<th style="padding:.38rem .8rem;text-align:left;'
+                                f'font-size:.69rem;font-weight:700;color:#94a3b8;'
+                                f'text-transform:uppercase;letter-spacing:.08em;">'
+                                f'💬 Alasan</th>'
+                                f'</tr></thead>'
+                                f'<tbody>{_rows_html}</tbody>'
+                                f'</table></div>',
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.markdown(
+                                '<div style="margin:0 0 0.4rem 1.5rem;padding:.55rem 1rem;'
+                                'background:#f8fafc;border-radius:6px;font-size:.82rem;'
+                                'color:#94a3b8;">Tidak ada detail tersedia.</div>',
+                                unsafe_allow_html=True,
+                            )
 
                 st.caption(
-                    f"Total {len(_df_none_display)} hari kosong "
-                    f"dari {_n_emp_none} karyawan berbeda."
+                    f"Total {_n_days_none} hari kosong "
+                    f"dari {_n_emp_none} karyawan."
                 )
-                
+
     else:
         with st.expander("⚠️ Data Kosong / Tidak Terklasifikasi", expanded=False):
             st.info("Data kalender belum tersedia untuk diperiksa.")
