@@ -109,20 +109,22 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
         --table-header-bg: #1e293b;
     }
 }
-/* Streamlit dark mode class override */
-[data-testid="stAppViewContainer"] {
-    --bg-primary:      #0f172a;
-    --bg-secondary:    #1e293b;
-    --text-primary:    #f1f5f9;
-    --text-secondary:  #cbd5e1;
-    --text-muted:      #94a3b8;
-    --text-faint:      #64748b;
-    --border-color:    #334155;
-    --border-strong:   #475569;
-    --table-hover:     #1e3358;
-    --table-header-bg: #1e293b;
-    --badge-bg:        #1e3a5f;
-    --badge-color:     #7dd3fc;
+/* Streamlit dark mode class override — hanya aktif di OS dark mode */
+@media (prefers-color-scheme: dark) {
+    [data-testid="stAppViewContainer"] {
+        --bg-primary:      #0f172a;
+        --bg-secondary:    #1e293b;
+        --text-primary:    #f1f5f9;
+        --text-secondary:  #cbd5e1;
+        --text-muted:      #94a3b8;
+        --text-faint:      #64748b;
+        --border-color:    #334155;
+        --border-strong:   #475569;
+        --table-hover:     #1e3358;
+        --table-header-bg: #1e293b;
+        --badge-bg:        #1e3a5f;
+        --badge-color:     #7dd3fc;
+    }
 }
 
 .main .block-container { padding: 2rem 3rem 4rem; max-width: 1440px; }
@@ -203,7 +205,7 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 }
 .period-header-cell {
     padding: 0.7rem 0.5rem;
-    font-size: 0.68rem; font-weight: 700;
+    font-size: 0.72rem; font-weight: 700;
     color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em;
 }
 .period-row {
@@ -233,7 +235,10 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
     background: var(--badge-bg); color: var(--badge-color);
     padding: 0.22rem 0.7rem; border-radius: 20px;
     font-family: 'DM Mono', monospace; font-size: 0.73rem;
-    font-weight: 600; border: 1px solid color-mix(in srgb, var(--badge-color) 30%, transparent);
+    font-weight: 600; border: 1px solid rgba(29, 78, 216, 0.30);
+}
+@media (prefers-color-scheme: dark) {
+    .period-badge { border-color: rgba(125, 211, 252, 0.30); }
 }
 .empty-state {
     text-align: center; padding: 5rem 2rem; color: var(--text-faint);
@@ -1149,11 +1154,13 @@ def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
     return buf.getvalue()
 
 
+@st.cache_data(show_spinner=False)
 def export_multi_period_bytes(selected_periods: list) -> bytes:
     """
     Buat satu file .xlsx dengan beberapa sheet — satu sheet per periode yang dipilih.
     Data diambil dari database (tidak memerlukan file Excel di-upload ulang).
     """
+
     wb = Workbook()
     wb.remove(wb.active)   # hapus sheet kosong default
 
@@ -2078,7 +2085,7 @@ if not st.session_state.get("show_upload_panel", False) and uploaded is None and
 }
 .pt-head-cell {
     padding: .65rem .5rem;
-    font-size: .67rem; font-weight: 700;
+    font-size: .72rem; font-weight: 700;
     color: var(--text-faint, #94a3b8);
     text-transform: uppercase; letter-spacing: .09em;
 }
@@ -2727,7 +2734,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
         else:
             df_daily_cal = pd.DataFrame()
 
-    dcol1, dcol2, dcol3 = st.columns([1, 1, 2])
+    dcol1, dcol2 = st.columns([1, 1])
 
     with dcol1:
         xlsx_bytes = to_excel_calendar_bytes(df_daily_cal, df_result, time_range or current_periode or "")
