@@ -61,12 +61,16 @@ if "_pending_override_periode" not in st.session_state:
     st.session_state._pending_override_periode = None
 if "show_h_panel" not in st.session_state:
     st.session_state.show_h_panel = False
+if "export_prepared" not in st.session_state:
+    st.session_state.export_prepared = False
+if "_last_export_sel" not in st.session_state:
+    st.session_state._last_export_sel = []
 
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap');
 
-html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
+html, body, [class*="css"] { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
 
 :root {
     --bg-primary:      #ffffff;
@@ -156,7 +160,7 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .badge {
     display: inline-block; background: rgba(255,255,255,0.12); color: #7dd3fc;
     padding: 0.2rem 0.75rem; border-radius: 20px; font-size: 0.75rem;
-    font-family: 'DM Mono', monospace; margin-bottom: 1rem;
+    font-family: 'DM Mono', 'Cascadia Code', 'Fira Mono', 'Courier New', monospace; margin-bottom: 1rem;
     letter-spacing: 0.08em; border: 1px solid rgba(125,211,252,0.25);
 }
 
@@ -286,10 +290,11 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .metric-h        { background: #fff0f0; border-left: 4px solid #ff4444; }
 
 .metric-card .label {
-    font-size: 0.72rem; color: #64748b; font-weight: 600;
+    font-size: 0.72rem; color: var(--text-muted); font-weight: 600;
     text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.5rem;
     display: flex; align-items: center; gap: 0.35rem;
 }
+
 .metric-card .value {
     font-size: 2.1rem; font-weight: 700;
     font-family: 'DM Mono', monospace; line-height: 1;
@@ -313,7 +318,7 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .metric-ot       .value { color: #475569; }
 .metric-rl       .value { color: #15803d; }
 .metric-h        .value { color: #cc0000; }
-.metric-card .sub { font-size: 0.70rem; color: #94a3b8; font-weight: 400; margin-top: 0.35rem; }
+.metric-card .sub { font-size: 0.70rem; color: var(--text-faint); font-weight: 400; margin-top: 0.35rem; }
 
 /* ── Download Button ── */
 .stDownloadButton button {
@@ -1155,7 +1160,7 @@ def to_excel_calendar_bytes(df_daily, df_employees, time_range=""):
 
 
 @st.cache_data(show_spinner=False)
-def export_multi_period_bytes(selected_periods: list) -> bytes:
+def export_multi_period_bytes(selected_periods: tuple) -> bytes:
     """
     Buat satu file .xlsx dengan beberapa sheet — satu sheet per periode yang dipilih.
     Data diambil dari database (tidak memerlukan file Excel di-upload ulang).
@@ -1769,6 +1774,32 @@ _LOGIC_HTML = (
     '</div>'
 )
 
+@st.dialog("⚠️ Data Periode Sudah Ada", width="small")
+def show_override_confirm_dialog(periode_label: str, periode: str):
+    st.markdown(
+        f"Bulan **{periode_label}** sudah ada di database. "
+        f"Apakah ingin **override** data lama?",
+    )
+    st.caption("Data lama akan di-soft-delete sebelum data baru disimpan.")
+    st.markdown("<div style='margin:0.8rem 0 0.4rem'></div>", unsafe_allow_html=True)
+    _dc1, _dc2 = st.columns(2)
+    with _dc1:
+        if st.button("✅ Ya, Override", type="primary", use_container_width=True, key="dlg_override_yes"):
+            st.session_state._override_confirmed_for = periode
+            st.session_state._show_override_confirm  = False
+            st.rerun()
+    with _dc2:
+        if st.button("❌ Tidak, Batalkan", use_container_width=True, key="dlg_override_no"):
+            st.session_state._show_override_confirm      = False
+            st.session_state._pending_override_periode   = None
+            st.session_state._pending_file_bytes         = None
+            st.session_state._override_confirmed_for     = None
+            st.session_state.show_upload_panel           = False
+            st.toast("Upload dibatalkan. Data lama tidak diubah.", icon="ℹ️")
+            st.rerun()
+
+
+
 
 @st.dialog("📋 Logic Klasifikasi Absensi", width="large")
 def show_logic_dialog():
@@ -1872,29 +1903,46 @@ if st.session_state.get("show_export_panel", False):
         with _ex_col2:
             st.markdown("<div style='height:30px'></div>", unsafe_allow_html=True)
             if _sel_export:
+                # Reset prepared state when selection changes
+                if _sel_export != st.session_state._last_export_sel:
+                    st.session_state.export_prepared = False
+                    st.session_state._last_export_sel = _sel_export
+
                 _export_label = (
                     "_".join(_sel_export)
                     if len(_sel_export) <= 3
                     else f"{_sel_export[0]}_sd_{_sel_export[-1]}"
                 )
-                with st.spinner("⚙️ Menyiapkan file..."):
-                    _export_bytes = export_multi_period_bytes(_sel_export)
-                st.download_button(
-                    label=f"📥 Download {len(_sel_export)} Periode (.xlsx)",
-                    data=_export_bytes,
-                    file_name=f"Absensi_Export_{_export_label}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    type="primary",
-                    key="btn_download_export",
-                )
-                st.caption(
-                    f"✅ {len(_sel_export)} sheet  ·  "
-                    + "  |  ".join(
-                        _period_label_map.get(p, p).split("  ·  ")[0]
-                        for p in _sel_export
+
+                if not st.session_state.export_prepared:
+                    if st.button(
+                        f"⚙️ Siapkan {len(_sel_export)} Periode",
+                        type="primary",
+                        use_container_width=True,
+                        key="btn_prepare_export",
+                    ):
+                        st.session_state.export_prepared = True
+                        st.rerun()
+                    st.caption("Klik untuk menyiapkan file sebelum download.")
+                else:
+                    with st.spinner("⚙️ Menyiapkan file..."):
+                        _export_bytes = export_multi_period_bytes(tuple(_sel_export))
+                    st.download_button(
+                        label=f"📥 Download {len(_sel_export)} Periode (.xlsx)",
+                        data=_export_bytes,
+                        file_name=f"Absensi_Export_{_export_label}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        type="primary",
+                        key="btn_download_export",
                     )
-                )
+                    st.caption(
+                        f"✅ {len(_sel_export)} sheet  ·  "
+                        + "  |  ".join(
+                            _period_label_map.get(p, p).split("  ·  ")[0]
+                            for p in _sel_export
+                        )
+                    )
             else:
                 st.markdown(
                     '<div style="background:#f1f5f9;border-radius:10px;padding:0.9rem 1.2rem;'
@@ -1902,7 +1950,7 @@ if st.session_state.get("show_export_panel", False):
                     '⬅️ Pilih periode terlebih dahulu</div>',
                     unsafe_allow_html=True,
                 )
-        st.markdown('</div>', unsafe_allow_html=True)
+
 
 # ── Panel Bulk Correction H (Tanggal Merah) ──────────────────
 if st.session_state.get("show_h_panel", False):
@@ -2115,7 +2163,6 @@ if not st.session_state.get("show_upload_panel", False) and uploaded is None and
     box-sizing: border-box;
 }
 .pt-row:last-child { border-bottom: none; }
-.pt-row:hover { background: var(--table-hover, #1e3358); }
 .pt-row::before {
     content: '';
     position: absolute;
@@ -2124,7 +2171,7 @@ if not st.session_state.get("show_upload_panel", False) and uploaded is None and
     background: var(--pt-accent, #6366f1);
     opacity: .5; transition: opacity .13s;
 }
-.pt-row:hover::before { opacity: 1; }
+.pt-row:hover::before { opacity: 0.85; }
 .pt-num {
     display: flex; align-items: center; justify-content: center;
 }
@@ -2285,50 +2332,14 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                 st.stop()
 
         # ── Konfirmasi Override (tampil jika periode sudah ada) ──────────
+        # ── Konfirmasi Override (dialog modal) ──────────────────────────
         if st.session_state.get("_show_override_confirm"):
             _op = st.session_state._pending_override_periode
             try:
                 _op_label = _dt.datetime.strptime(_op, "%Y-%m").strftime("%B %Y")
             except Exception:
                 _op_label = _op
-
-            st.markdown(
-                f'<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;'
-                f'padding:1.2rem 1.6rem;margin-bottom:1rem;">'
-                f'<div style="font-size:1rem;font-weight:700;color:#92400e;margin-bottom:0.5rem;">'
-                f'⚠️ Data Sudah Ada</div>'
-                f'<div style="font-size:0.88rem;color:#78350f;">'
-                f'Bulan <b>{_op_label}</b> sudah ada di database. '
-                f'Apakah ingin <b>override</b> data lama?<br>'
-                f'<span style="font-size:0.8rem;color:#a16207;">'
-                f'Data lama akan di-soft-delete sebelum data baru disimpan.</span>'
-                f'</div></div>',
-                unsafe_allow_html=True,
-            )
-            _oc1, _oc2, _oc3 = st.columns([1, 1, 4])
-            with _oc1:
-                if st.button(
-                    "✅ Ya, Override",
-                    type="primary",
-                    use_container_width=True,
-                    key="btn_override_yes",
-                ):
-                    st.session_state._override_confirmed_for = _op
-                    st.session_state._show_override_confirm  = False
-                    st.rerun()
-            with _oc2:
-                if st.button(
-                    "❌ Tidak",
-                    use_container_width=True,
-                    key="btn_override_no",
-                ):
-                    st.session_state._show_override_confirm      = False
-                    st.session_state._pending_override_periode   = None
-                    st.session_state._pending_file_bytes         = None
-                    st.session_state._override_confirmed_for     = None
-                    st.session_state.show_upload_panel           = False
-                    st.info("ℹ️ Upload dibatalkan. Data lama tidak diubah.")
-                    st.rerun()
+            show_override_confirm_dialog(_op_label, _op)
             st.stop()
 
         _periode  = None
@@ -2490,8 +2501,17 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     total_h    = int(df_result["H"].sum())  if "H"  in df_result.columns else 0
     total_e    = stats["employees"]
 
+    _section_label_style = (
+        'style="font-size:.68rem;font-weight:700;color:var(--text-muted);'
+        'text-transform:uppercase;letter-spacing:.1em;'
+        'margin:1.4rem 0 .45rem;display:flex;align-items:center;gap:.5rem;"'
+    )
     st.markdown(f"""
-<div class="metric-row" style="grid-template-columns: repeat(6, 1fr);">
+<div {_section_label_style}>
+  <span style="width:6px;height:6px;border-radius:50%;background:#3b82f6;display:inline-block;flex-shrink:0;"></span>
+  Attendance
+</div>
+<div class="metric-row" style="grid-template-columns: repeat(6, 1fr);margin-top:0;">
   <div class="metric-card metric-shift">
     <div class="label"><span>📋</span> S (Shift)</div>
     <div class="value">{total_s:,}</div>
@@ -2523,7 +2543,12 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     <div class="sub">Total dalam periode</div>
   </div>
 </div>
-<div class="metric-row" style="margin-top:-1rem;grid-template-columns: repeat(7, 1fr);">
+
+<div {_section_label_style}>
+  <span style="width:6px;height:6px;border-radius:50%;background:#a855f7;display:inline-block;flex-shrink:0;"></span>
+  Leave
+</div>
+<div class="metric-row" style="grid-template-columns: repeat(7, 1fr);margin-top:0;">
   <div class="metric-card metric-ksick">
     <div class="label"><span>💊</span> K-Sick</div>
     <div class="value">{total_ks:,}</div>
@@ -2560,7 +2585,12 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     <div class="sub">Rest / Not scheduled</div>
   </div>
 </div>
-<div class="metric-row" style="margin-top:-1rem;grid-template-columns: repeat(6, 1fr);">
+
+<div {_section_label_style}>
+  <span style="width:6px;height:6px;border-radius:50%;background:#f59e0b;display:inline-block;flex-shrink:0;"></span>
+  Special Leave
+</div>
+<div class="metric-row" style="grid-template-columns: repeat(6, 1fr);margin-top:0;">
   <div class="metric-card metric-hl">
     <div class="label"><span>💍</span> HL</div>
     <div class="value">{total_hl:,}</div>
@@ -2604,6 +2634,39 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
         search = st.text_input("🔍 Cari Nama / Account", placeholder="Ketik nama atau account...")
     with fcol3:
         show_late_only = st.checkbox("⚠️ Hanya Late/K/DW", value=False)
+
+    # ── Active filter indicator ─────────────────────────────────────────
+    _active_filters = []
+    if sel_rules:
+        _active_filters.append(f"🏷️ Rules: {', '.join(sel_rules)}")
+    if search:
+        _active_filters.append(f"🔍 \"{search}\"")
+    if show_late_only:
+        _active_filters.append("⚠️ Late / K / DW saja")
+
+    if _active_filters:
+        _tags_html = "".join(
+            f'<span style="display:inline-flex;align-items:center;gap:.3rem;'
+            f'background:var(--badge-bg);color:var(--badge-color);'
+            f'border:1px solid rgba(29,78,216,.2);border-radius:20px;'
+            f'padding:.18rem .65rem;font-size:.74rem;font-weight:600;'
+            f'font-family:\'DM Mono\',monospace;white-space:nowrap;">'
+            f'{f}</span>'
+            for f in _active_filters
+        )
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:.5rem;'
+            f'padding:.45rem .75rem;margin-bottom:.6rem;'
+            f'background:var(--bg-secondary);border:1px solid var(--border-color);'
+            f'border-radius:8px;flex-wrap:wrap;">'
+            f'<span style="font-size:.72rem;color:var(--text-muted);font-weight:600;'
+            f'text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;">Filter aktif:</span>'
+            f'{_tags_html}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+
 
     with st.expander("👁️ Tampilkan / Sembunyikan Kolom Kategori", expanded=False):
         st.markdown(
