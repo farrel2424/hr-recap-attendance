@@ -767,6 +767,10 @@ def _get_all_daily_from_db(periode):
             "Name":           str(r["nama"]).strip(),
             "Date":           str(r["tanggal"]).strip(),
             "Shift":          str(r.get("shift") or "").strip(),
+            "TipeShift":      str(r.get("tipe_shift") or "").strip(),
+            "JamMasuk":       str(r.get("jam_masuk") or "").strip(),
+            "JamKeluar":      str(r.get("jam_keluar") or "").strip(),
+            "AttResult":      str(r.get("status_absensi") or "").strip(),
             "Classification": klas,
         })
     return pd.DataFrame(rows)

@@ -247,7 +247,9 @@ def get_all_daily(periode: str):
         rows = conn.execute("""
             SELECT
                 k.account, k.nama,
-                a.tanggal, a.shift, a.status_klasifikasi
+                a.tanggal, a.shift, a.tipe_shift,
+                a.jam_masuk, a.jam_keluar,
+                a.status_absensi, a.status_klasifikasi
             FROM absensi_harian a
             JOIN karyawan k ON k.id = a.karyawan_id
             WHERE a.periode = ?
