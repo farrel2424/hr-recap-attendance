@@ -514,6 +514,46 @@ _CELL_FILL: dict[str, PatternFill] = {
 }
 
 
+def determine_reason(
+    shift: str,
+    att_result: str,
+    status_klasifikasi,
+    jam_masuk: str = "",
+    jam_keluar: str = "",
+) -> str:
+    """
+    Tentukan alasan mengapa sebuah baris absensi tidak menghasilkan klasifikasi
+    (sel kalender kosong / putih).
+
+    Urutan pengecekan:
+      1. att_result kosong / NaN / "--"
+           → "Att result tidak tercatat"
+      2. shift masuk SKIP_SHIFTS (Rest / Not scheduled / "--" / kosong)
+           → "Shift '{nilai}' dilewati engine"
+      3. status_klasifikasi None / NULL, tapi shift & att valid
+           → "Att result tidak dikenali: '{nilai}'"
+      4. Fallback
+           → "Tidak dapat ditentukan"
+    """
+    _att = str(att_result).strip() if att_result else ""
+    _shift = str(shift).strip() if shift else ""
+
+    # 1. Att result tidak ada sama sekali
+    if not _att or _att in {"--", "nan", "None"}:
+        return "Att result tidak tercatat"
+
+    # 2. Shift dilewati engine
+    if _shift in SKIP_SHIFTS:
+        _label = f"'{_shift}'" if _shift else "(kosong)"
+        return f"Shift {_label} dilewati engine"
+
+    # 3. Shift & att valid tapi tidak cocok dengan pola manapun
+    if not status_klasifikasi or str(status_klasifikasi).strip() in {"", "None", "nan"}:
+        return f"Att result tidak dikenali: '{_att}'"
+
+    # 4. Fallback
+    return "Tidak dapat ditentukan"
+
 def _get_cell_display(shift_text: str, classification) -> str:
     """Tentukan nilai label teks untuk sel kalender berdasarkan klasifikasi."""
     return _LABEL_MAP.get(classification, "")
@@ -2903,13 +2943,19 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
 
         # Map data klasifikasi yang ada
         _daily_map = {}
+        _accounts_with_data: set = set()
         for _, row in df_daily_cal.iterrows():
             _acc = row["Account"]
+            _accounts_with_data.add(_acc)
             if _acc not in _daily_map:
                 _daily_map[_acc] = {}
             _daily_map[_acc][row["Date"]] = {
-                "Shift": row.get("Shift", ""),
-                "Classification": row.get("Classification")
+                "Shift":          row.get("Shift", ""),
+                "Classification": row.get("Classification"),
+                "AttResult":      row.get("AttResult", ""),
+                "TipeShift":      row.get("TipeShift", ""),
+                "JamMasuk":       row.get("JamMasuk", ""),
+                "JamKeluar":      row.get("JamKeluar", ""),
             }
 
         _none_rows = []
@@ -2918,24 +2964,40 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             _name = _emp["Nama"]
             for _d in _dates:
                 _day_info = _daily_map.get(_acc, {}).get(_d)
+                _record_exists = (_acc in _accounts_with_data) and (_day_info is not None)
                 if _day_info is None:
-                    _shift_t = ""
-                    _klas = None
+                    _shift_t  = ""
+                    _klas     = None
+                    _att_res  = ""
+                    _tipe_s   = ""
+                    _jam_in   = ""
+                    _jam_out  = ""
                 else:
-                    _shift_t = _day_info["Shift"]
-                    _klas = _day_info["Classification"]
+                    _shift_t  = _day_info["Shift"]
+                    _klas     = _day_info["Classification"]
+                    _att_res  = _day_info.get("AttResult", "")
+                    _tipe_s   = _day_info.get("TipeShift", "")
+                    _jam_in   = _day_info.get("JamMasuk", "")
+                    _jam_out  = _day_info.get("JamKeluar", "")
 
                 # Mengambil referensi langsung dari fungsi penentu tampilan sel kalender
                 if not _get_cell_display(_shift_t, _klas):
+                    _reason = determine_reason(
+                        shift              = _shift_t,
+                        att_result         = _att_res,
+                        status_klasifikasi = _klas,
+                        jam_masuk          = _jam_in,
+                        jam_keluar         = _jam_out,
+                    )
                     _none_rows.append({
-                        "Account": _acc,
-                        "Name": _name,
-                        "Date": _d,
-                        "Shift": _shift_t,
-                        "Classification": _klas
+                        "Account":        _acc,
+                        "Name":           _name,
+                        "Date":           _d,
+                        "Shift":          _shift_t,
+                        "Classification": _klas,
+                        "Reason":         _reason,
                     })
-
-        _df_none = pd.DataFrame(_none_rows, columns=["Account", "Name", "Date", "Shift", "Classification"])
+        _df_none = pd.DataFrame(_none_rows, columns=["Account", "Name", "Date", "Shift", "Classification", "Reason"])
 
         _none_label = f"⚠️ Data Kosong / Tidak Terklasifikasi — {len(_df_none)} hari"
         with st.expander(_none_label, expanded=False):
@@ -2952,36 +3014,40 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                 )
 
                 # Ringkasan per karyawan
-                _grp_none = (
-                    _df_none.groupby(["Account", "Name"])["Date"]
-                    .apply(list)
-                    .reset_index()
-                    .rename(columns={"Date": "Tanggal Kosong"})
-                )
-                _grp_none.insert(0, "No.", range(1, len(_grp_none) + 1))
-                _grp_none["Jumlah"] = _grp_none["Tanggal Kosong"].apply(len)
-                _grp_none["Tanggal"] = _grp_none["Tanggal Kosong"].apply(
-                    lambda dates: ", ".join(sorted(dates))
-                )
+                # Tabel flat per hari — satu baris = satu hari kosong
+                _df_none_display = _df_none.sort_values(
+                    ["Date", "Name"]
+                ).reset_index(drop=True)
+                _df_none_display.insert(0, "No.", range(1, len(_df_none_display) + 1))
+
+                _n_emp_none = _df_none["Account"].nunique()
 
                 st.dataframe(
-                    _grp_none[["No.", "Name", "Account", "Jumlah", "Tanggal"]],
+                    _df_none_display[["No.", "Date", "Name", "Account", "Shift", "Reason"]],
                     width="stretch",
                     hide_index=True,
-                    height=min(60 + len(_grp_none) * 35, 400),
+                    height=min(60 + len(_df_none_display) * 35, 480),
                     column_config={
-                        "No."     : st.column_config.NumberColumn("No.", width="small"),
-                        "Name"    : st.column_config.TextColumn("Nama", width="large"),
-                        "Account" : st.column_config.TextColumn("Account", width="medium"),
-                        "Jumlah"  : st.column_config.NumberColumn("Σ Hari Kosong", format="%d", width="small"),
-                        "Tanggal" : st.column_config.TextColumn("Tanggal Kosong", width="stretch"),
+                        "No."     : st.column_config.NumberColumn(
+                            "No.", width="small"),
+                        "Date"    : st.column_config.TextColumn(
+                            "📅 Tanggal", width="small"),
+                        "Name"    : st.column_config.TextColumn(
+                            "👤 Nama", width="medium"),
+                        "Account" : st.column_config.TextColumn(
+                            "Account", width="small"),
+                        "Shift"   : st.column_config.TextColumn(
+                            "⏰ Shift", width="medium"),
+                        "Reason"  : st.column_config.TextColumn(
+                            "💬 Keterangan", width="large"),
                     },
                 )
 
                 st.caption(
-                    f"Total {len(_df_none)} hari kosong "
-                    f"dari {len(_grp_none)} karyawan berbeda."
+                    f"Total {len(_df_none_display)} hari kosong "
+                    f"dari {_n_emp_none} karyawan berbeda."
                 )
+                
     else:
         with st.expander("⚠️ Data Kosong / Tidak Terklasifikasi", expanded=False):
             st.info("Data kalender belum tersedia untuk diperiksa.")
