@@ -2891,6 +2891,97 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                 width="stretch",
             )
 
+    # ── Expander: Ringkasan Data Kosong (None) ────────────────────────────
+    if not df_daily_cal.empty:
+        # Melakukan rekonstruksi grid lengkap (karyawan x tanggal) untuk mencari sel yang benar-benar kosong di kalender
+        _dates = sorted(df_daily_cal["Date"].dropna().unique())
+        _emp_list = df_result[["Nama", "Account"]].drop_duplicates("Account").to_dict("records")
+
+        # Map data klasifikasi yang ada
+        _daily_map = {}
+        for _, row in df_daily_cal.iterrows():
+            _acc = row["Account"]
+            if _acc not in _daily_map:
+                _daily_map[_acc] = {}
+            _daily_map[_acc][row["Date"]] = {
+                "Shift": row.get("Shift", ""),
+                "Classification": row.get("Classification")
+            }
+
+        _none_rows = []
+        for _emp in _emp_list:
+            _acc = _emp["Account"]
+            _name = _emp["Nama"]
+            for _d in _dates:
+                _day_info = _daily_map.get(_acc, {}).get(_d)
+                if _day_info is None:
+                    _shift_t = ""
+                    _klas = None
+                else:
+                    _shift_t = _day_info["Shift"]
+                    _klas = _day_info["Classification"]
+
+                # Mengambil referensi langsung dari fungsi penentu tampilan sel kalender
+                if not _get_cell_display(_shift_t, _klas):
+                    _none_rows.append({
+                        "Account": _acc,
+                        "Name": _name,
+                        "Date": _d,
+                        "Shift": _shift_t,
+                        "Classification": _klas
+                    })
+
+        _df_none = pd.DataFrame(_none_rows, columns=["Account", "Name", "Date", "Shift", "Classification"])
+
+        _none_label = f"⚠️ Data Kosong / Tidak Terklasifikasi — {len(_df_none)} hari"
+        with st.expander(_none_label, expanded=False):
+            if _df_none.empty:
+                st.success("✅ Semua data sudah terklasifikasi. Tidak ada baris kosong.")
+            else:
+                st.markdown(
+                    '<div style="font-size:0.82rem;color:#64748b;margin-bottom:0.8rem;">'
+                    'Baris-baris berikut tidak masuk klasifikasi manapun dan akan tampil '
+                    '<b>kosong (putih)</b> di kalender harian. Periksa data sumber atau '
+                    'lakukan <b>edit manual</b> melalui dialog karyawan.'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+
+                # Ringkasan per karyawan
+                _grp_none = (
+                    _df_none.groupby(["Account", "Name"])["Date"]
+                    .apply(list)
+                    .reset_index()
+                    .rename(columns={"Date": "Tanggal Kosong"})
+                )
+                _grp_none.insert(0, "No.", range(1, len(_grp_none) + 1))
+                _grp_none["Jumlah"] = _grp_none["Tanggal Kosong"].apply(len)
+                _grp_none["Tanggal"] = _grp_none["Tanggal Kosong"].apply(
+                    lambda dates: ", ".join(sorted(dates))
+                )
+
+                st.dataframe(
+                    _grp_none[["No.", "Name", "Account", "Jumlah", "Tanggal"]],
+                    width="stretch",
+                    hide_index=True,
+                    height=min(60 + len(_grp_none) * 35, 400),
+                    column_config={
+                        "No."     : st.column_config.NumberColumn("No.", width="small"),
+                        "Name"    : st.column_config.TextColumn("Nama", width="large"),
+                        "Account" : st.column_config.TextColumn("Account", width="medium"),
+                        "Jumlah"  : st.column_config.NumberColumn("Σ Hari Kosong", format="%d", width="small"),
+                        "Tanggal" : st.column_config.TextColumn("Tanggal Kosong", width="stretch"),
+                    },
+                )
+
+                st.caption(
+                    f"Total {len(_df_none)} hari kosong "
+                    f"dari {len(_grp_none)} karyawan berbeda."
+                )
+    else:
+        with st.expander("⚠️ Data Kosong / Tidak Terklasifikasi", expanded=False):
+            st.info("Data kalender belum tersedia untuk diperiksa.")
+
     with st.expander("📊 Ringkasan per Rules"):
         grp = df_result.groupby("Rules").agg(
             Karyawan=("Account", "count"),
