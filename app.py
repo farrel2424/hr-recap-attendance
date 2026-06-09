@@ -3242,13 +3242,14 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
 
                         # Kumpulkan baris yang ada perubahan (Edit tidak kosong atau Remarks terisi)
                         for _, _erow in _edited.iterrows():
-                            _edit_val    = str(_erow.get("Edit", "") or "").strip()
+                            _raw_edit    = _erow.get("Edit")
+                            _edit_val    = str(_raw_edit).strip() if (_raw_edit is not None and str(_raw_edit).strip() not in ("", "nan", "None")) else ""
                             _remarks_val = str(_erow.get("Remarks", "") or "").strip()
                             if _edit_val or _remarks_val:
                                 _all_none_edits.append({
                                     "account" : _acc_e,
                                     "tanggal" : _erow["Tanggal"],
-                                    "status"  : _edit_val or None,
+                                    "status"  : _edit_val if _edit_val else None,
                                     "remarks" : _remarks_val,
                                 })
 
@@ -3267,8 +3268,13 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                     ):
                         _n_saved = bulk_update_none_corrections(_all_none_edits)
                         st.cache_data.clear()
+                        _edit_summary = ", ".join(
+                            f"{e['account']}@{e['tanggal']}→{e['status'] or '(remarks only)'}"
+                            for e in _all_none_edits
+                        )
                         st.success(
-                            f"✅ **{_n_saved} baris** berhasil dikoreksi dan disimpan ke database."
+                            f"✅ **{_n_saved} baris** berhasil dikoreksi. "
+                            f"Detail: {_edit_summary}"
                         )
                         st.rerun()
 

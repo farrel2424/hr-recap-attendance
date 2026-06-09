@@ -249,7 +249,7 @@ def get_all_daily(periode: str):
                 k.account, k.nama,
                 a.tanggal, a.shift, a.tipe_shift,
                 a.jam_masuk, a.jam_keluar,
-                a.status_absensi, a.status_klasifikasi
+                a.status_absensi, a.status_klasifikasi,
                 COALESCE(a.catatan, '') AS catatan
             FROM absensi_harian a
             JOIN karyawan k ON k.id = a.karyawan_id
@@ -394,13 +394,13 @@ def bulk_update_none_corrections(
     corrections: list[dict],
 ) -> int:
     """
-    Update status_klasifikasi dan catatan untuk baris-baris yang sebelumnya None/kosong.
+    Update status_klasifikasi dan/atau catatan untuk baris-baris yang sebelumnya None/kosong.
 
     Args:
         corrections: list of dict dengan key:
             - account   : str
             - tanggal   : str  (format YYYY-MM-DD)
-            - status    : str  (klasifikasi baru)
+            - status    : str | None  — jika None, status lama dipertahankan
             - remarks   : str  (catatan / remarks)
 
     Returns:
@@ -418,20 +418,32 @@ def bulk_update_none_corrections(
             if not row:
                 continue
             karyawan_id = row["id"]
-            cur = conn.execute(
-                """
-                UPDATE absensi_harian
-                   SET status_klasifikasi = ?,
-                       catatan            = ?,
-                       is_manual_override = 1
-                 WHERE karyawan_id = ? AND tanggal = ?
-                """,
-                (
-                    c["status"] or "None",
-                    (c.get("remarks") or "").strip(),
-                    karyawan_id,
-                    c["tanggal"],
-                ),
-            )
+
+            _status  = c.get("status")
+            _remarks = (c.get("remarks") or "").strip()
+
+            if _status:
+                # Update status + remarks sekaligus
+                cur = conn.execute(
+                    """
+                    UPDATE absensi_harian
+                       SET status_klasifikasi = ?,
+                           catatan            = ?,
+                           is_manual_override = 1
+                     WHERE karyawan_id = ? AND tanggal = ?
+                    """,
+                    (_status, _remarks, karyawan_id, c["tanggal"]),
+                )
+            else:
+                # Hanya update remarks, pertahankan status lama
+                cur = conn.execute(
+                    """
+                    UPDATE absensi_harian
+                       SET catatan            = ?,
+                           is_manual_override = 1
+                     WHERE karyawan_id = ? AND tanggal = ?
+                    """,
+                    (_remarks, karyawan_id, c["tanggal"]),
+                )
             updated += cur.rowcount
     return updated
