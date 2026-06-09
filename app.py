@@ -559,22 +559,6 @@ def determine_reason(
     jam_keluar: str = "",
     has_alt_leave: bool = False,
 ) -> str:
-    """
-    Tentukan alasan mengapa sebuah baris absensi tidak menghasilkan klasifikasi.
-
-    Urutan pengecekan:
-      1. att_result kosong / NaN / "--"
-           → "Att result tidak tercatat"
-      2. att_result mengandung "Calculating" & status_klasifikasi kosong
-           a. has_alt_leave=True  → "Att result belum final — ada nilai di kolom cuti tambahan"
-           b. has_alt_leave=False → "Tidak tergolong ke dalam S, Off, H dan jenis leave apapun"
-      3. shift masuk SKIP_SHIFTS
-           → "Shift '{nilai}' dilewati engine"
-      4. status_klasifikasi None / NULL tapi shift & att valid
-           → "Att result tidak dikenali: '{nilai}'"
-      5. Fallback
-           → "Tidak dapat ditentukan"
-    """
     _att   = str(att_result).strip() if att_result else ""
     _shift = str(shift).strip() if shift else ""
 
@@ -582,23 +566,24 @@ def determine_reason(
     if not _att or _att in {"--", "nan", "None"}:
         return "Att result tidak tercatat"
 
-    # 2. "Calculating" — att_result belum final
-    if "Calculating" in _att:
-        if not status_klasifikasi or str(status_klasifikasi).strip() in {"", "None", "nan"}:
-            if has_alt_leave:
-                return "Leave tidak dikenali (年假/调休假/成长假)"
-            return "Tidak tergolong ke dalam S, Off, H dan jenis leave apapun"
-
-    # 3. Shift dilewati engine
+    # 2. Shift dilewati engine — cek sebelum blok "tidak terklasifikasi"
     if _shift in SKIP_SHIFTS:
         _label = f"'{_shift}'" if _shift else "(kosong)"
         return f"Shift {_label} dilewati"
 
-    # 4. Shift & att valid tapi tidak cocok dengan pola manapun
+    # 3. Tidak terklasifikasi — cek penyebab spesifik secara independen
     if not status_klasifikasi or str(status_klasifikasi).strip() in {"", "None", "nan"}:
+        # 3a: kolom cuti non-standar (年假/调休假/成长假) terisi
+        #     → harus dicek PERTAMA, terlepas dari nilai att_result
+        if has_alt_leave:
+            return "Leave tidak dikenali (年假/调休假/成长假)"
+        # 3b: att_result sedang dihitung / belum final
+        if "Calculating" in _att:
+            return "Tidak tergolong ke dalam S, Off, H dan jenis leave apapun"
+        # 3c: att_result ada tapi tidak cocok pola manapun
         return f"Att result tidak dikenali: '{_att}'"
 
-    # 5. Fallback
+    # 4. Fallback
     return "Tidak dapat ditentukan"
 
 def _get_cell_display(shift_text: str, classification) -> str:
