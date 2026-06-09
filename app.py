@@ -2847,9 +2847,12 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             unsafe_allow_html=True,
         )
         opt_cols_selected = []
-        _r1 = st.columns(7)
-        _r2 = st.columns(6)
-        opt_col_ui = _r1 + _r2
+        _n_opt = len(OPTIONAL_COLS_DEF)
+        _cols_per_row = 7
+        _rows_needed = (_n_opt + _cols_per_row - 1) // _cols_per_row
+        opt_col_ui = []
+        for _ in range(_rows_needed):
+            opt_col_ui += st.columns(_cols_per_row)
         for i, (key, label, desc) in enumerate(OPTIONAL_COLS_DEF):
             with opt_col_ui[i]:
                 checked = st.checkbox(label, value=True, help=desc, key=f"col_{key}")
