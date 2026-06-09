@@ -1254,14 +1254,6 @@ def _populate_calendar_ws(ws, df_daily, df_employees):
                 _comment.height = 80
                 c.comment = _comment
 
-
-            # ── Remarks → openpyxl Comment ──────────────────────────
-            _emp_remarks = daily_map.get(acc, {}).get(d)
-            if _emp_remarks and len(_emp_remarks) > 2:
-                # daily_map menyimpan tuple (shift, classification)
-                # perlu fallback — remarks diambil dari remarks_map jika tersedia
-                pass
-
     # ── Lebar kolom ────────────────────────────────────────────────────
     ws.column_dimensions["A"].width = 13.0
     ws.column_dimensions["B"].width = 25.7
@@ -2955,31 +2947,6 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
         else:
             df_daily_cal = pd.DataFrame()
 
-    dcol1, dcol2 = st.columns([1, 1])
-
-    with dcol1:
-        xlsx_bytes = to_excel_calendar_bytes(df_daily_cal, df_result, time_range or current_periode or "")
-        st.download_button(
-            label="📥 Download Kalender Harian (.xlsx)",
-            data=xlsx_bytes,
-            file_name=fname,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            width="stretch",
-        )
-
-    with dcol2:
-        if len(df_show) < len(df_result):
-            visible_accs    = set(df_show["Account"].tolist())
-            df_daily_filt   = df_daily_cal[df_daily_cal["Account"].isin(visible_accs)] if not df_daily_cal.empty else df_daily_cal
-            xlsx_filtered   = to_excel_calendar_bytes(df_daily_filt, df_show, time_range or current_periode or "")
-            st.download_button(
-                label="🔽 Download Hasil Filter (.xlsx)",
-                data=xlsx_filtered,
-                file_name=f"Filter_{fname}",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width="stretch",
-            )
-
     # ── Expander: Ringkasan Data Kosong (None) ────────────────────────────
     if not df_daily_cal.empty:
         # Melakukan rekonstruksi grid lengkap (karyawan x tanggal) untuk mencari sel yang benar-benar kosong di kalender
@@ -3288,6 +3255,32 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     else:
         with st.expander("⚠️ Data Kosong / Tidak Terklasifikasi", expanded=False):
             st.info("Data kalender belum tersedia untuk diperiksa.")
+
+        # ── Download Buttons — dirender setelah Data Kosong agar pakai data terbaru ──
+    dcol1, dcol2 = st.columns([1, 1])
+
+    with dcol1:
+        xlsx_bytes = to_excel_calendar_bytes(df_daily_cal, df_result, time_range or current_periode or "")
+        st.download_button(
+            label="📥 Download Kalender Harian (.xlsx)",
+            data=xlsx_bytes,
+            file_name=fname,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            width="stretch",
+        )
+
+    with dcol2:
+        if len(df_show) < len(df_result):
+            visible_accs  = set(df_show["Account"].tolist())
+            df_daily_filt = df_daily_cal[df_daily_cal["Account"].isin(visible_accs)] if not df_daily_cal.empty else df_daily_cal
+            xlsx_filtered = to_excel_calendar_bytes(df_daily_filt, df_show, time_range or current_periode or "")
+            st.download_button(
+                label="🔽 Download Hasil Filter (.xlsx)",
+                data=xlsx_filtered,
+                file_name=f"Filter_{fname}",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                width="stretch",
+            )
 
     with st.expander("📊 Ringkasan per Rules"):
         grp = df_result.groupby("Rules").agg(
