@@ -481,6 +481,7 @@ _STATUS_ICON = {
     "ML"     : "🤱",
     "WML"    : "👶",
     "OT"     : "📝",
+    "1/2 OT" : "📄",
     "RL"     : "📅",
     "H"      : "🔴",
     "PL"     : "🪪",
@@ -519,6 +520,7 @@ _LABEL_MAP = {
     "ML":      "ML",
     "WML":     "WML",
     "OT":      "OT",
+    "1/2 OT":  "0,5OT",
     "RL":      "RL",
     "H":       "H",
     "PL":      "PL",
@@ -544,6 +546,7 @@ _CELL_FILL: dict[str, PatternFill] = {
     "ML":     PatternFill("solid", fgColor="B6D7A8"),  # hijau sedang — cuti melahirkan
     "WML":    PatternFill("solid", fgColor="A2C4C9"),  # teal         — cuti istri melahirkan
     "OT":     PatternFill("solid", fgColor="D9D9D9"),  # abu-abu
+    "0,5OT":  PatternFill("solid", fgColor="ECECEC"),  # abu-abu muda — half OT
     "RL":     PatternFill("solid", fgColor="D9EAD3"),  # hijau muda — roster leave      — cuti lainnya
     "H":      PatternFill("solid", fgColor="FF9999"),  # merah cerah — hari libur nasional
     "PL":     PatternFill("solid", fgColor="E6D0DE"),  # ungu muda kemerahan — Personal Leave TKA
@@ -942,7 +945,7 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                 _ALL_STATUS_OPTS = [
                     "S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
                     "WFA", "1/2 WFA", "WFS", "DW", "K", "Off",
-                    "HL", "ML", "WML", "OT", "RL", "H", "PL", "None",
+                    "HL", "ML", "WML", "OT", "1/2 OT", "RL", "H", "PL", "None",
                 ]
                 st.markdown(    
                     '<div style="font-size:0.82rem;color:#64748b;margin-bottom:0.6rem;">'
@@ -1341,7 +1344,7 @@ CORE_COLS = [
     "No.", "Nama", "Account", "Rules",
     "S", "Late", "1/2 UL", "UL", "DW",
     "K", "AL", "1/2 AL", "WFA", "1/2 WFA", "WFS", "Off",
-    "HL", "ML", "WML", "OT", "RL", "H", "PL",
+    "HL", "ML", "WML", "OT", "1/2 OT", "RL", "H", "PL",
 ]
 
 OPTIONAL_COLS_DEF = [
@@ -1356,6 +1359,7 @@ OPTIONAL_COLS_DEF = [
     ("ML",     "🤱 ML",           "Cuti Melahirkan"),
     ("WML",    "👶 WML",          "Cuti Istri Melahirkan"),
     ("OT",     "📝 OT",           "Cuti Lainnya"),
+    ("1/2 OT", "📄 1/2 OT",       "Cuti Lainnya setengah hari"),
     ("RL",     "📅 RL",           "Roster Leave"),
     ("H",      "🔴 H",            "Hari Libur Nasional"),
     ("PL",     "🪪 PL",           "Personal Leave TKA"),
@@ -1385,6 +1389,7 @@ COL_CONFIG_ALL = {
     "ML"      : st.column_config.NumberColumn("🤱 ML",          format="%d", width="small"),
     "WML"     : st.column_config.NumberColumn("👶 WML",         format="%d", width="small"),
     "OT"      : st.column_config.NumberColumn("📝 OT",          format="%d", width="small"),
+    "1/2 OT"  : st.column_config.NumberColumn("📄 1/2 OT",    format="%d", width="small"),
     "RL"      : st.column_config.NumberColumn("📅 RL",          format="%d", width="small"),
     "H"       : st.column_config.NumberColumn("🔴 H",           format="%d", width="small"),
     "PL"      : st.column_config.NumberColumn("🪪 PL",           format="%d", width="small"),
@@ -2638,11 +2643,11 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             "half_wfa": "1/2 WFA",
             "wfs": "WFS",
             "dw": "DW", "k_sick": "K", "off_count": "Off",
-            "hl": "HL", "ml": "ML", "wml": "WML", "ot": "OT", "rl": "RL", "h_count": "H", "pl_count": "PL",
+            "hl": "HL", "ml": "ML", "wml": "WML", "ot": "OT", "half_ot":"1/2 OT", "rl": "RL", "h_count": "H", "pl_count": "PL",
         })
         for col in ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
                     "WFA", "1/2 WFA", "WFS", "DW", "K", "Off",
-                    "HL", "ML", "WML", "OT", "RL","H","PL"]:
+                    "HL", "ML", "WML", "OT", "1/2 OT", "RL","H","PL"]:
             if col not in df_result.columns:
                 df_result[col] = 0
         file_bytes = None
@@ -2681,7 +2686,8 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     total_hl   = int(df_result["HL"].sum())  if "HL"  in df_result.columns else 0
     total_ml   = int(df_result["ML"].sum())  if "ML"  in df_result.columns else 0
     total_wml  = int(df_result["WML"].sum()) if "WML" in df_result.columns else 0
-    total_ot   = int(df_result["OT"].sum())  if "OT"  in df_result.columns else 0
+    total_ot   = int(df_result["OT"].sum())    if "OT"     in df_result.columns else 0
+    total_hot  = int(df_result["1/2 OT"].sum()) if "1/2 OT" in df_result.columns else 0
     total_rl   = int(df_result["RL"].sum()) if "RL" in df_result.columns else 0
     total_h    = int(df_result["H"].sum())  if "H"  in df_result.columns else 0
     total_pl   = int(df_result["PL"].sum()) if "PL" in df_result.columns else 0
@@ -2796,6 +2802,11 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     <div class="label"><span>📝</span> OT</div>
     <div class="value">{total_ot:,}</div>
     <div class="sub">Cuti Lainnya</div>
+  </div>
+  <div class="metric-card metric-ot">
+    <div class="label"><span>📄</span> 1/2 OT</div>
+    <div class="value">{total_hot:,}</div>
+    <div class="sub">Cuti Lainnya ½ hari</div>
   </div>
   <div class="metric-card metric-rl">
     <div class="label"><span>📅</span> RL</div>
@@ -3182,7 +3193,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                 _ALL_KLASIFIKASI_OPTS = [
                     "", "S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
                     "WFA", "1/2 WFA", "WFS", "DW", "K", "Off",
-                    "HL", "ML", "WML", "OT", "RL", "H",
+                    "HL", "ML", "WML", "OT", "1/2 OT", "RL", "H",
                 ]
 
                 # ── Rows: st.expander per karyawan ──────────────────────

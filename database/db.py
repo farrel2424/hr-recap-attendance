@@ -213,6 +213,8 @@ def get_rekap(periode: str):
                          THEN 1 ELSE 0 END) AS wml,
                 SUM(CASE WHEN a.status_klasifikasi = 'OT'
                          THEN 1 ELSE 0 END) AS ot,
+                SUM(CASE WHEN a.status_klasifikasi = '1/2 OT'
+                         THEN 1 ELSE 0 END) AS half_ot,
                 SUM(CASE WHEN a.status_klasifikasi = 'RL'
                          THEN 1 ELSE 0 END) AS rl,
                 SUM(CASE WHEN a.status_klasifikasi = 'H'
