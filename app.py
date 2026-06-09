@@ -67,6 +67,8 @@ if "export_prepared" not in st.session_state:
     st.session_state.export_prepared = False
 if "_last_export_sel" not in st.session_state:
     st.session_state._last_export_sel = []
+if "_force_refresh_cal" not in st.session_state:
+    st.session_state._force_refresh_cal = False
 
 st.markdown("""
 <style>
@@ -2939,6 +2941,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
         if time_range else f"Absensi_Kalender_{current_periode or ''}.xlsx"
     )
 
+    # df_daily_cal diambil di sini — akan di-refresh ulang setelah expander jika ada koreksi
     with st.spinner("⚙️ Menyiapkan data kalender..."):
         if current_periode:
             df_daily_cal = _get_all_daily_from_db(current_periode)
@@ -2946,6 +2949,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             df_daily_cal = get_all_daily_for_calendar(file_bytes)
         else:
             df_daily_cal = pd.DataFrame()
+    _df_daily_cal_periode = current_periode  # simpan untuk re-fetch setelah koreksi
 
     # ── Expander: Ringkasan Data Kosong (None) ────────────────────────────
     if not df_daily_cal.empty:
@@ -3235,6 +3239,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                     ):
                         _n_saved = bulk_update_none_corrections(_all_none_edits)
                         st.cache_data.clear()
+                        st.session_state["_force_refresh_cal"] = True
                         _edit_summary = ", ".join(
                             f"{e['account']}@{e['tanggal']}→{e['status'] or '(remarks only)'}"
                             for e in _all_none_edits
@@ -3257,6 +3262,15 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             st.info("Data kalender belum tersedia untuk diperiksa.")
 
         # ── Download Buttons — dirender setelah Data Kosong agar pakai data terbaru ──
+    # Re-fetch df_daily_cal jika ada koreksi yang baru disimpan
+    if st.session_state.pop("_force_refresh_cal", False):
+        if current_periode:
+            df_daily_cal = _get_all_daily_from_db(current_periode)
+        elif file_bytes is not None:
+            df_daily_cal = get_all_daily_for_calendar(file_bytes)
+        else:
+            df_daily_cal = pd.DataFrame()
+
     dcol1, dcol2 = st.columns([1, 1])
 
     with dcol1:
