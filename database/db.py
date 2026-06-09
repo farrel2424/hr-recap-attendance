@@ -73,6 +73,12 @@ def init_db():
             )
         except Exception:
             pass
+        try:
+            conn.execute(
+                "ALTER TABLE absensi_harian ADD COLUMN has_alt_leave INTEGER DEFAULT 0"
+            )
+        except Exception:
+            pass
 
 
 def save_periode(df_raw, periode: str):
@@ -118,8 +124,9 @@ def save_periode(df_raw, periode: str):
             conn.execute("""
                 INSERT OR REPLACE INTO absensi_harian
                     (karyawan_id, tanggal, shift, tipe_shift, jam_masuk, jam_keluar,
-                     jam_kerja, status_absensi, status_klasifikasi, leave_app, periode)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     jam_kerja, status_absensi, status_klasifikasi, leave_app,
+                     has_alt_leave, periode)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 karyawan_id,
                 tanggal,
@@ -131,6 +138,7 @@ def save_periode(df_raw, periode: str):
                 str(r.get("Attendance results", "")).strip(),
                 r.get("_status_klasifikasi"),
                 leave_val,
+                int(r.get("_has_alt_leave", 0)),
                 periode,
             ))
 
@@ -252,7 +260,8 @@ def get_all_daily(periode: str):
                 a.tanggal, a.shift, a.tipe_shift,
                 a.jam_masuk, a.jam_keluar,
                 a.status_absensi, a.status_klasifikasi,
-                COALESCE(a.catatan, '') AS catatan
+                COALESCE(a.catatan, '')        AS catatan,
+                COALESCE(a.has_alt_leave, 0)   AS has_alt_leave
             FROM absensi_harian a
             JOIN karyawan k ON k.id = a.karyawan_id
             WHERE a.periode = ?

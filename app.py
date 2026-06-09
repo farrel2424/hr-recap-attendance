@@ -444,6 +444,10 @@ def _find_wml_col(df)           -> str | None: return _find_col(df, "WML-WifeMat
 def _find_ot_col(df)            -> str | None: return _find_col(df, "OT - Others")
 def _find_rl_col(df) -> str | None: return _find_col(df, "RL - Roster Leave")
 def _find_pl_col(df) -> str | None: return _find_col(df, "PL-Personal(TKA)")
+def _find_nj_fei_col(df)   -> str | None: return _find_col(df, "年假+探亲假（非项目现场）")
+def _find_nj_xiang_col(df) -> str | None: return _find_col(df, "年假+探亲假（项目现场）")
+def _find_tiaoxiu_col(df)  -> str | None: return _find_col(df, "调休假")
+def _find_chengjia_col(df) -> str | None: return _find_col(df, "成长假")
 
 def _get_sheet_name(file_bytes: bytes) -> str:
     import openpyxl
@@ -552,38 +556,48 @@ def determine_reason(
     status_klasifikasi,
     jam_masuk: str = "",
     jam_keluar: str = "",
+    has_alt_leave: bool = False,
 ) -> str:
     """
-    Tentukan alasan mengapa sebuah baris absensi tidak menghasilkan klasifikasi
-    (sel kalender kosong / putih).
+    Tentukan alasan mengapa sebuah baris absensi tidak menghasilkan klasifikasi.
 
     Urutan pengecekan:
       1. att_result kosong / NaN / "--"
            → "Att result tidak tercatat"
-      2. shift masuk SKIP_SHIFTS (Rest / Not scheduled / "--" / kosong)
+      2. att_result mengandung "Calculating" & status_klasifikasi kosong
+           a. has_alt_leave=True  → "Att result belum final — ada nilai di kolom cuti tambahan"
+           b. has_alt_leave=False → "Tidak tergolong ke dalam S, Off, H dan jenis leave apapun"
+      3. shift masuk SKIP_SHIFTS
            → "Shift '{nilai}' dilewati engine"
-      3. status_klasifikasi None / NULL, tapi shift & att valid
+      4. status_klasifikasi None / NULL tapi shift & att valid
            → "Att result tidak dikenali: '{nilai}'"
-      4. Fallback
+      5. Fallback
            → "Tidak dapat ditentukan"
     """
-    _att = str(att_result).strip() if att_result else ""
+    _att   = str(att_result).strip() if att_result else ""
     _shift = str(shift).strip() if shift else ""
 
     # 1. Att result tidak ada sama sekali
     if not _att or _att in {"--", "nan", "None"}:
         return "Att result tidak tercatat"
 
-    # 2. Shift dilewati engine
+    # 2. "Calculating" — att_result belum final
+    if "Calculating" in _att:
+        if not status_klasifikasi or str(status_klasifikasi).strip() in {"", "None", "nan"}:
+            if has_alt_leave:
+                return "Leave tidak dikenali (年假/调休假/成长假)"
+            return "Tidak tergolong ke dalam S, Off, H dan jenis leave apapun"
+
+    # 3. Shift dilewati engine
     if _shift in SKIP_SHIFTS:
         _label = f"'{_shift}'" if _shift else "(kosong)"
         return f"Shift {_label} dilewati"
 
-    # 3. Shift & att valid tapi tidak cocok dengan pola manapun
+    # 4. Shift & att valid tapi tidak cocok dengan pola manapun
     if not status_klasifikasi or str(status_klasifikasi).strip() in {"", "None", "nan"}:
         return f"Att result tidak dikenali: '{_att}'"
 
-    # 4. Fallback
+    # 5. Fallback
     return "Tidak dapat ditentukan"
 
 def _get_cell_display(shift_text: str, classification) -> str:
@@ -848,6 +862,7 @@ def _get_all_daily_from_db(periode):
             "AttResult":      str(r.get("status_absensi") or "").strip(),
             "Classification": klas,
             "Remarks":        str(r.get("catatan") or "").strip(),
+            "HasAltLeave":    int(r.get("has_alt_leave") or 0),
         })
     return pd.DataFrame(rows)
 
@@ -2562,6 +2577,21 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                 ), axis=1,
             )
 
+
+            # ── Hitung flag kolom cuti extra (tidak ditrack engine) ─────
+            _nj_fei_col    = _find_nj_fei_col(df_raw)
+            _nj_xiang_col  = _find_nj_xiang_col(df_raw)
+            _tiaoxiu_col   = _find_tiaoxiu_col(df_raw)
+            _chengjia_col  = _find_chengjia_col(df_raw)
+
+            def _calc_has_alt_leave(r):
+                for _col in [_nj_fei_col, _nj_xiang_col, _tiaoxiu_col, _chengjia_col]:
+                    if _col and not is_zero_or_dash(r.get(_col)):
+                        return 1
+                return 0
+
+            df_raw["_has_alt_leave"] = df_raw.apply(_calc_has_alt_leave, axis=1)
+
             # ── Cek apakah periode sudah ada di DB ──────────────────────
             _existing_periodes = get_periodes()
             if (
@@ -2994,6 +3024,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                 "TipeShift":      row.get("TipeShift", ""),
                 "JamMasuk":       row.get("JamMasuk", ""),
                 "JamKeluar":      row.get("JamKeluar", ""),
+                "HasAltLeave":    int(row.get("HasAltLeave") or 0),
             }
 
         _none_rows = []
@@ -3011,12 +3042,13 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                     _jam_in   = ""
                     _jam_out  = ""
                 else:
-                    _shift_t  = _day_info["Shift"]
-                    _klas     = _day_info["Classification"]
-                    _att_res  = _day_info.get("AttResult", "")
-                    _tipe_s   = _day_info.get("TipeShift", "")
-                    _jam_in   = _day_info.get("JamMasuk", "")
-                    _jam_out  = _day_info.get("JamKeluar", "")
+                    _shift_t      = _day_info["Shift"]
+                    _klas         = _day_info["Classification"]
+                    _att_res      = _day_info.get("AttResult", "")
+                    _tipe_s       = _day_info.get("TipeShift", "")
+                    _jam_in       = _day_info.get("JamMasuk", "")
+                    _jam_out      = _day_info.get("JamKeluar", "")
+                    _has_alt_leave= bool(_day_info.get("HasAltLeave", 0))
 
                 # Mengambil referensi langsung dari fungsi penentu tampilan sel kalender
                 if not _get_cell_display(_shift_t, _klas):
@@ -3028,6 +3060,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                             status_klasifikasi = _klas,
                             jam_masuk          = _jam_in,
                             jam_keluar         = _jam_out,
+                            has_alt_leave      = _has_alt_leave,
                         )
                     else:
                         _reason = "Tidak ada record di database (excel)"
