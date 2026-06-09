@@ -1038,6 +1038,7 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
     st.markdown("<div style='margin-top:1.5rem'></div>", unsafe_allow_html=True)
     if st.button("❌ Tutup Rincian", use_container_width=True, type="secondary", key=f"btn_close_dlg_{account}"):
         st.session_state.dialog_target = "closed"
+        st.session_state.dialog_emp = None
         st.rerun()
 
 
@@ -3004,6 +3005,71 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             df_daily_cal = pd.DataFrame()
     _df_daily_cal_periode = current_periode  # simpan untuk re-fetch setelah koreksi
 
+@st.cache_data(show_spinner=False)
+def _compute_none_rows(df_daily_cal_json: str, emp_list_json: str) -> list[dict]:
+    """Hitung sel kosong/None — di-cache agar tidak rerun setiap keystroke."""
+    import json
+    df_daily = pd.read_json(io.StringIO(df_daily_cal_json), orient="records")
+    emp_list = json.loads(emp_list_json)
+
+    dates = sorted(df_daily["Date"].dropna().unique()) if not df_daily.empty else []
+
+    daily_map: dict = {}
+    accounts_with_data: set = set()
+    for _, row in df_daily.iterrows():
+        acc = row["Account"]
+        accounts_with_data.add(acc)
+        if acc not in daily_map:
+            daily_map[acc] = {}
+        daily_map[acc][row["Date"]] = {
+            "Shift":          row.get("Shift", ""),
+            "Classification": row.get("Classification"),
+            "AttResult":      row.get("AttResult", ""),
+            "TipeShift":      row.get("TipeShift", ""),
+            "JamMasuk":       row.get("JamMasuk", ""),
+            "JamKeluar":      row.get("JamKeluar", ""),
+            "HasAltLeave":    int(row.get("HasAltLeave") or 0),
+        }
+
+    none_rows = []
+    for emp in emp_list:
+        acc   = emp["Account"]
+        name  = emp["Nama"]
+        for d in dates:
+            day_info = daily_map.get(acc, {}).get(d)
+            if day_info is None:
+                shift_t = ""; klas = None; att_res = ""; tipe_s = ""
+                jam_in = ""; jam_out = ""; has_alt = False
+            else:
+                shift_t      = day_info["Shift"]
+                klas         = day_info["Classification"]
+                att_res      = day_info.get("AttResult", "")
+                jam_in       = day_info.get("JamMasuk", "")
+                jam_out      = day_info.get("JamKeluar", "")
+                has_alt      = bool(day_info.get("HasAltLeave", 0))
+
+            if not _get_cell_display(shift_t, klas):
+                has_db_record = day_info is not None
+                if has_db_record:
+                    reason = determine_reason(
+                        shift=shift_t, att_result=att_res,
+                        status_klasifikasi=klas,
+                        jam_masuk=jam_in, jam_keluar=jam_out,
+                        has_alt_leave=has_alt,
+                    )
+                else:
+                    reason = "Tidak ada record di database (excel)"
+                none_rows.append({
+                    "Account":        acc,
+                    "Name":           name,
+                    "Date":           d,
+                    "Shift":          shift_t,
+                    "Classification": klas,
+                    "Reason":         reason,
+                    "HasRecord":      has_db_record,
+                })
+    return none_rows
+    
     # ── Expander: Ringkasan Data Kosong (None) ────────────────────────────
     if not df_daily_cal.empty:
         # Melakukan rekonstruksi grid lengkap (karyawan x tanggal) untuk mencari sel yang benar-benar kosong di kalender
@@ -3028,54 +3094,12 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                 "HasAltLeave":    int(row.get("HasAltLeave") or 0),
             }
 
-        _none_rows = []
-        for _emp in _emp_list:
-            _acc = _emp["Account"]
-            _name = _emp["Nama"]
-            for _d in _dates:
-                _day_info = _daily_map.get(_acc, {}).get(_d)
-                _record_exists = (_acc in _accounts_with_data) and (_day_info is not None)
-                if _day_info is None:
-                    _shift_t  = ""
-                    _klas     = None
-                    _att_res  = ""
-                    _tipe_s   = ""
-                    _jam_in   = ""
-                    _jam_out  = ""
-                else:
-                    _shift_t      = _day_info["Shift"]
-                    _klas         = _day_info["Classification"]
-                    _att_res      = _day_info.get("AttResult", "")
-                    _tipe_s       = _day_info.get("TipeShift", "")
-                    _jam_in       = _day_info.get("JamMasuk", "")
-                    _jam_out      = _day_info.get("JamKeluar", "")
-                    _has_alt_leave= bool(_day_info.get("HasAltLeave", 0))
-
-                # Mengambil referensi langsung dari fungsi penentu tampilan sel kalender
-                if not _get_cell_display(_shift_t, _klas):
-                    _has_db_record = _day_info is not None
-                    if _has_db_record:
-                        _reason = determine_reason(
-                            shift              = _shift_t,
-                            att_result         = _att_res,
-                            status_klasifikasi = _klas,
-                            jam_masuk          = _jam_in,
-                            jam_keluar         = _jam_out,
-                            has_alt_leave      = _has_alt_leave,
-                        )
-                    else:
-                        _reason = "Tidak ada record di database (excel)"
-                    _none_rows.append({
-                        "Account":        _acc,
-                        "Name":           _name,
-                        "Date":           _d,
-                        "Shift":          _shift_t,
-                        "Classification": _klas,
-                        "Reason":         _reason,
-                        "HasRecord":      _has_db_record,
-                    })
+        import json as _json
+        _none_rows = _compute_none_rows(
+            df_daily_cal.to_json(orient="records"),
+            _json.dumps(_emp_list),
+        )
         _df_none = pd.DataFrame(_none_rows, columns=["Account", "Name", "Date", "Shift", "Classification", "Reason", "HasRecord"])
-
         # ── Step 1: Group _df_none per karyawan ──────────────────────────────
         # Struktur untuk outer table (ringkasan per karyawan)
         _none_grouped_rows = []
