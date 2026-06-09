@@ -70,6 +70,7 @@ from .ml           import classify as _classify_ml
 from .wml          import classify as _classify_wml
 from .ot           import classify as _classify_ot
 from .rl           import classify as _classify_rl
+from .pl           import classify as _classify_pl
 from .dw           import classify as _classify_dw
 from .k_sick       import classify as _classify_k_sick
 from .off          import classify as _classify_off, OFF_RESULTS
@@ -112,6 +113,7 @@ def classify(
     wml_count=None,          # Kolom "WML-WifeMater-妻产假(Day(s))"
     ot_count=None,           # Kolom "OT - Others - 其他(Day(s))"
     rl_count=None,           # Kolom "RL - Roster Leave(Day(s))"
+    pl_count=None,           # Kolom "PL-Personal(TKA)-私假(Day(s))"
 ) -> list[str] | None:
     """
     Klasifikasi satu baris absensi.
@@ -210,6 +212,11 @@ def classify(
     if rl_result:
         return rl_result
 
+    # ── 13.5. PL — Personal Leave (TKA) ─────────────────────────────────
+    pl_result = _classify_pl(pl_count)
+    if pl_result:
+        return pl_result
+
     # ── 14 & 15. Keterlambatan masuk + pulang lebih awal ────────────────────
     #   Kedua kolom dievaluasi terlebih dahulu, lalu diambil yang paling berat.
     #   Severity: 1/2 UL  >  Late
@@ -263,6 +270,7 @@ def classify_str(
     wml_count=None,
     ot_count=None,
     rl_count=None,
+    pl_count=None,
 ) -> str | None:
     """
     Versi string dari classify() — untuk disimpan ke DB (dipisah '|').
@@ -287,6 +295,7 @@ def classify_str(
         wml_count=wml_count,
         ot_count=ot_count,
         rl_count=rl_count,
+        pl_count=pl_count,
     )
     
     if result is None:

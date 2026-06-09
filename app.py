@@ -443,6 +443,7 @@ def _find_ml_col(df)            -> str | None: return _find_col(df, "ML-Maternit
 def _find_wml_col(df)           -> str | None: return _find_col(df, "WML-WifeMater")
 def _find_ot_col(df)            -> str | None: return _find_col(df, "OT - Others")
 def _find_rl_col(df) -> str | None: return _find_col(df, "RL - Roster Leave")
+def _find_pl_col(df) -> str | None: return _find_col(df, "PL-Personal(TKA)")
 
 def _get_sheet_name(file_bytes: bytes) -> str:
     import openpyxl
@@ -477,6 +478,7 @@ _STATUS_ICON = {
     "OT"     : "📝",
     "RL"     : "📅",
     "H"      : "🔴",
+    "PL"     : "🪪",
     "None"   : "❓",
 }
 
@@ -514,6 +516,7 @@ _LABEL_MAP = {
     "OT":      "OT",
     "RL":      "RL",
     "H":       "H",
+    "PL":      "PL",
 }
 
 
@@ -538,7 +541,9 @@ _CELL_FILL: dict[str, PatternFill] = {
     "OT":     PatternFill("solid", fgColor="D9D9D9"),  # abu-abu
     "RL":     PatternFill("solid", fgColor="D9EAD3"),  # hijau muda — roster leave      — cuti lainnya
     "H":      PatternFill("solid", fgColor="FF9999"),  # merah cerah — hari libur nasional
+    "PL":     PatternFill("solid", fgColor="E6D0DE"),  # ungu muda kemerahan — Personal Leave TKA
 }
+
 
 
 def determine_reason(
@@ -617,6 +622,7 @@ def get_employee_daily(file_bytes, account):
     wml_col           = _find_wml_col(df_emp)
     ot_col            = _find_ot_col(df_emp)
     rl_col            = _find_rl_col(df_emp)
+    pl_col            = _find_pl_col(df_emp)   # atau df_all / df
 
     def _parse_hours(val):
         if val is None:
@@ -653,6 +659,7 @@ def get_employee_daily(file_bytes, account):
             wml_count=r.get(wml_col) if wml_col  else None,
             ot_count=r.get(ot_col)   if ot_col   else None,
             rl_count=r.get(rl_col)   if rl_col   else None,
+            pl_count=r.get(pl_col)   if pl_col   else None,
         )
 
         if _klas_raw is None:
@@ -763,6 +770,7 @@ def get_all_daily_for_calendar(file_bytes):
     wml_col           = _find_wml_col(df_all)
     ot_col            = _find_ot_col(df_all)
     rl_col            = _find_rl_col(df_all)
+    pl_col            = _find_pl_col(df_all)
 
     df_all = df_all[df_all["Account"].notna() & df_all["Rules"].notna()]
     df_all = df_all[~df_all["Account"].astype(str).str.strip().isin(["", "--"])]
@@ -933,9 +941,9 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                 _ALL_STATUS_OPTS = [
                     "S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
                     "WFA", "1/2 WFA", "WFS", "DW", "K", "Off",
-                    "HL", "ML", "WML", "OT", "RL", "H", "None",
+                    "HL", "ML", "WML", "OT", "RL", "H", "PL", "None",
                 ]
-                st.markdown(
+                st.markdown(    
                     '<div style="font-size:0.82rem;color:#64748b;margin-bottom:0.6rem;">'
                     'Edit jam masuk/keluar, pilih klasifikasi manual, dan tambah catatan. '
                     'Centang <b>Override</b> untuk menandai baris yang ditetapkan manual '
@@ -1061,6 +1069,7 @@ def process_file(file_bytes):
     wml_col          = _find_wml_col(df)
     ot_col           = _find_ot_col(df)
     rl_col           = _find_rl_col(df)
+    pl_col           = _find_pl_col(df)
 
     df = df.copy()
     df = df[df["Account"].notna() & df["Rules"].notna()]
@@ -1327,7 +1336,7 @@ CORE_COLS = [
     "No.", "Nama", "Account", "Rules",
     "S", "Late", "1/2 UL", "UL", "DW",
     "K", "AL", "1/2 AL", "WFA", "1/2 WFA", "WFS", "Off",
-    "HL", "ML", "WML", "OT", "RL", "H",
+    "HL", "ML", "WML", "OT", "RL", "H", "PL",
 ]
 
 OPTIONAL_COLS_DEF = [
@@ -1344,6 +1353,7 @@ OPTIONAL_COLS_DEF = [
     ("OT",     "📝 OT",           "Cuti Lainnya"),
     ("RL",     "📅 RL",           "Roster Leave"),
     ("H",      "🔴 H",            "Hari Libur Nasional"),
+    ("PL",     "🪪 PL",           "Personal Leave TKA"),
 ]
 OPTIONAL_KEYS   = [c[0] for c in OPTIONAL_COLS_DEF]
 OPTIONAL_LABELS = {c[0]: c[1] for c in OPTIONAL_COLS_DEF}
@@ -1372,6 +1382,7 @@ COL_CONFIG_ALL = {
     "OT"      : st.column_config.NumberColumn("📝 OT",          format="%d", width="small"),
     "RL"      : st.column_config.NumberColumn("📅 RL",          format="%d", width="small"),
     "H"       : st.column_config.NumberColumn("🔴 H",           format="%d", width="small"),
+    "PL"      : st.column_config.NumberColumn("🪪 PL",           format="%d", width="small"),
 }
 
 
@@ -2525,6 +2536,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             _wml_col          = _find_wml_col(df_raw)
             _ot_col           = _find_ot_col(df_raw)
             _rl_col           = _find_rl_col(df_raw)
+            _pl_col           = _find_pl_col(df_raw)
 
             df_raw["_tipe_shift"] = df_raw["Shift"].apply(classify_shift_type)
             df_raw["_status_klasifikasi"] = df_raw.apply(
@@ -2546,6 +2558,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                     wml_count=r.get(_wml_col)                if _wml_col          else None,
                     ot_count=r.get(_ot_col)                  if _ot_col           else None,
                     rl_count=r.get(_rl_col)                  if _rl_col           else None,
+                    pl_count=r.get(_pl_col)                  if _pl_col           else None,
                 ), axis=1,
             )
 
@@ -2605,11 +2618,11 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
             "half_wfa": "1/2 WFA",
             "wfs": "WFS",
             "dw": "DW", "k_sick": "K", "off_count": "Off",
-            "hl": "HL", "ml": "ML", "wml": "WML", "ot": "OT", "rl": "RL", "h_count": "H",
+            "hl": "HL", "ml": "ML", "wml": "WML", "ot": "OT", "rl": "RL", "h_count": "H", "pl_count": "PL",
         })
         for col in ["S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
                     "WFA", "1/2 WFA", "WFS", "DW", "K", "Off",
-                    "HL", "ML", "WML", "OT", "RL","H"]:
+                    "HL", "ML", "WML", "OT", "RL","H","PL"]:
             if col not in df_result.columns:
                 df_result[col] = 0
         file_bytes = None
@@ -2651,6 +2664,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     total_ot   = int(df_result["OT"].sum())  if "OT"  in df_result.columns else 0
     total_rl   = int(df_result["RL"].sum()) if "RL" in df_result.columns else 0
     total_h    = int(df_result["H"].sum())  if "H"  in df_result.columns else 0
+    total_pl   = int(df_result["PL"].sum()) if "PL" in df_result.columns else 0
     total_e    = stats["employees"]
 
     _section_label_style = (
@@ -2772,6 +2786,11 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     <div class="label"><span>🔴</span> H</div>
     <div class="value">{total_h:,}</div>
     <div class="sub">Tanggal Merah</div>
+  </div>
+  <div class="metric-card metric-pl">
+    <div class="label"><span>🪪</span> PL</div>
+    <div class="value" style="color:#be185d;">{total_pl:,}</div>
+    <div class="sub">Personal Leave (TKA)</div>
   </div>
 </div>
 """, unsafe_allow_html=True)

@@ -209,6 +209,8 @@ def get_rekap(periode: str):
                          THEN 1 ELSE 0 END) AS rl,
                 SUM(CASE WHEN a.status_klasifikasi = 'H'
                          THEN 1 ELSE 0 END) AS h_count
+                SUM(CASE WHEN a.status_klasifikasi = 'PL'
+                         THEN 1 ELSE 0 END) AS pl_count
             FROM karyawan k
             JOIN absensi_harian a ON a.karyawan_id = k.id
             WHERE a.periode = ?
