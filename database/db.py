@@ -393,19 +393,6 @@ def bulk_update_h(
 def bulk_update_none_corrections(
     corrections: list[dict],
 ) -> int:
-    """
-    Update status_klasifikasi dan/atau catatan untuk baris-baris yang sebelumnya None/kosong.
-
-    Args:
-        corrections: list of dict dengan key:
-            - account   : str
-            - tanggal   : str  (format YYYY-MM-DD)
-            - status    : str | None  — jika None, status lama dipertahankan
-            - remarks   : str  (catatan / remarks)
-
-    Returns:
-        Jumlah record yang berhasil diupdate.
-    """
     if not corrections:
         return 0
 
@@ -419,11 +406,33 @@ def bulk_update_none_corrections(
                 continue
             karyawan_id = row["id"]
 
-            _status  = c.get("status")
-            _remarks = (c.get("remarks") or "").strip()
+            _status     = c.get("status")
+            _remarks    = (c.get("remarks") or "").strip()
+            _has_record = c.get("has_record", True)
+            _periode    = c.get("periode", "")
 
+            if not _has_record and _periode:
+                # Record tidak ada — INSERT baru
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO absensi_harian
+                        (karyawan_id, tanggal, periode, status_klasifikasi,
+                         catatan, is_manual_override)
+                    VALUES (?, ?, ?, ?, ?, 1)
+                    """,
+                    (
+                        karyawan_id,
+                        c["tanggal"],
+                        _periode,
+                        _status or "None",
+                        _remarks,
+                    ),
+                )
+                updated += 1
+                continue  # INSERT sudah selesai, skip UPDATE
+
+            # Record sudah ada — UPDATE seperti sebelumnya
             if _status:
-                # Update status + remarks sekaligus
                 cur = conn.execute(
                     """
                     UPDATE absensi_harian
@@ -431,17 +440,18 @@ def bulk_update_none_corrections(
                            catatan            = ?,
                            is_manual_override = 1
                      WHERE karyawan_id = ? AND tanggal = ?
+                       AND is_deleted  = 0
                     """,
                     (_status, _remarks, karyawan_id, c["tanggal"]),
                 )
             else:
-                # Hanya update remarks, pertahankan status lama
                 cur = conn.execute(
                     """
                     UPDATE absensi_harian
                        SET catatan            = ?,
                            is_manual_override = 1
                      WHERE karyawan_id = ? AND tanggal = ?
+                       AND is_deleted  = 0
                     """,
                     (_remarks, karyawan_id, c["tanggal"]),
                 )

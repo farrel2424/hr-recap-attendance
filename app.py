@@ -3227,10 +3227,12 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                             _remarks_val = str(_erow.get("Remarks", "") or "").strip()
                             if _edit_val or _remarks_val:
                                 _all_none_edits.append({
-                                    "account" : _acc_e,
-                                    "tanggal" : _erow["Tanggal"],
-                                    "status"  : _edit_val if _edit_val else None,
-                                    "remarks" : _remarks_val,
+                                    "account"    : _acc_e,
+                                    "tanggal"    : _erow["Tanggal"],
+                                    "status"     : _edit_val if _edit_val else None,
+                                    "remarks"    : _remarks_val,
+                                    "has_record" : bool(_erow.get("HasRecord", True)),
+                                    "periode"    : current_periode or "",
                                 })
 
                 # ── Tombol Simpan semua koreksi ─────────────────────────
