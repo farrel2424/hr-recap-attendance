@@ -3030,7 +3030,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                             jam_keluar         = _jam_out,
                         )
                     else:
-                        _reason = "Tidak ada record di database"
+                        _reason = "Tidak ada record di database (excel)"
                     _none_rows.append({
                         "Account":        _acc,
                         "Name":           _name,
