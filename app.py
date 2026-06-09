@@ -2998,13 +2998,17 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
 
                 # Mengambil referensi langsung dari fungsi penentu tampilan sel kalender
                 if not _get_cell_display(_shift_t, _klas):
-                    _reason = determine_reason(
-                        shift              = _shift_t,
-                        att_result         = _att_res,
-                        status_klasifikasi = _klas,
-                        jam_masuk          = _jam_in,
-                        jam_keluar         = _jam_out,
-                    )
+                    _has_db_record = _day_info is not None
+                    if _has_db_record:
+                        _reason = determine_reason(
+                            shift              = _shift_t,
+                            att_result         = _att_res,
+                            status_klasifikasi = _klas,
+                            jam_masuk          = _jam_in,
+                            jam_keluar         = _jam_out,
+                        )
+                    else:
+                        _reason = "Tidak ada record di database"
                     _none_rows.append({
                         "Account":        _acc,
                         "Name":           _name,
@@ -3012,6 +3016,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                         "Shift":          _shift_t,
                         "Classification": _klas,
                         "Reason":         _reason,
+                        "HasRecord":      _has_db_record,
                     })
         _df_none = pd.DataFrame(_none_rows, columns=["Account", "Name", "Date", "Shift", "Classification", "Reason"])
 
@@ -3172,10 +3177,11 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                         _editor_rows = []
                         for _sd in _detail_rows:
                             _editor_rows.append({
-                                "Tanggal" : _sd["Date"],
-                                "Alasan"  : _sd["Reason"],
-                                "Edit"    : "",
-                                "Remarks" : _remarks_map.get(_sd["Date"], ""),
+                                "Tanggal"   : _sd["Date"],
+                                "Alasan"    : _sd["Reason"],
+                                "Edit"      : "" if _sd.get("HasRecord", True) else "—",
+                                "Remarks"   : _remarks_map.get(_sd["Date"], "") if _sd.get("HasRecord", True) else "",
+                                "HasRecord" : _sd.get("HasRecord", True),
                             })
                         _editor_df = pd.DataFrame(_editor_rows)
 
@@ -3208,13 +3214,16 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                                     width="large",
                                     help="Catatan bebas — akan muncul sebagai Comment di ekspor Excel",
                                 ),
+                                "HasRecord": None,  # sembunyikan kolom internal
                             },
                         )
 
                         # Kumpulkan baris yang ada perubahan (Edit tidak kosong atau Remarks terisi)
                         for _, _erow in _edited.iterrows():
+                            if not _erow.get("HasRecord", True):
+                                continue  # skip baris tanpa record DB
                             _raw_edit    = _erow.get("Edit")
-                            _edit_val    = str(_raw_edit).strip() if (_raw_edit is not None and str(_raw_edit).strip() not in ("", "nan", "None")) else ""
+                            _edit_val    = str(_raw_edit).strip() if (_raw_edit is not None and str(_raw_edit).strip() not in ("", "nan", "None", "—")) else ""
                             _remarks_val = str(_erow.get("Remarks", "") or "").strip()
                             if _edit_val or _remarks_val:
                                 _all_none_edits.append({
