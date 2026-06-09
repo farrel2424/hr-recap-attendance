@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+from openpyxl.comments import Comment
 from openpyxl.utils import get_column_letter
 from database.db import (
     init_db, save_periode, get_periodes, get_rekap,
@@ -19,6 +20,7 @@ from database.db import (
     get_dates_in_periode,
     get_rules_in_periode,
     bulk_update_h,
+    bulk_update_none_corrections,
 )
 from classifiers import (
     classify,
@@ -568,7 +570,7 @@ def determine_reason(
     # 2. Shift dilewati engine
     if _shift in SKIP_SHIFTS:
         _label = f"'{_shift}'" if _shift else "(kosong)"
-        return f"Shift {_label} dilewati engine"
+        return f"Shift {_label} dilewati"
 
     # 3. Shift & att valid tapi tidak cocok dengan pola manapun
     if not status_klasifikasi or str(status_klasifikasi).strip() in {"", "None", "nan"}:
@@ -835,6 +837,7 @@ def _get_all_daily_from_db(periode):
             "JamKeluar":      str(r.get("jam_keluar") or "").strip(),
             "AttResult":      str(r.get("status_absensi") or "").strip(),
             "Classification": klas,
+            "Remarks":        str(r.get("catatan") or "").strip(),
         })
     return pd.DataFrame(rows)
 
@@ -1163,6 +1166,7 @@ def _populate_calendar_ws(ws, df_daily, df_employees):
         daily_map[acc][row["Date"]] = (
             row.get("Shift", ""),
             row.get("Classification"),
+            str(row.get("Remarks", "") or "").strip(),
         )
 
     n_date_cols = len(dates)
@@ -1232,13 +1236,31 @@ def _populate_calendar_ws(ws, df_daily, df_employees):
             c.border    = BORDER
             c.alignment = CENTER
 
-            shift_t, klas = daily_map.get(acc, {}).get(d, ("", None))
+            _cell_data = daily_map.get(acc, {}).get(d, ("", None, ""))
+            shift_t = _cell_data[0]
+            klas    = _cell_data[1]
+            _rmk    = _cell_data[2] if len(_cell_data) > 2 else ""
             label = _get_cell_display(shift_t, klas)
 
             c.value = label
             c.font  = Font(name="Arial", size=9, bold=(label in ("DW", "K")))
             if label and label in _CELL_FILL:
                 c.fill = _CELL_FILL[label]
+
+            # ── Remarks → openpyxl Comment ──────────────────────────
+            if _rmk:
+                _comment = Comment(text=_rmk, author="Absensi Rekap")
+                _comment.width  = 200
+                _comment.height = 80
+                c.comment = _comment
+
+
+            # ── Remarks → openpyxl Comment ──────────────────────────
+            _emp_remarks = daily_map.get(acc, {}).get(d)
+            if _emp_remarks and len(_emp_remarks) > 2:
+                # daily_map menyimpan tuple (shift, classification)
+                # perlu fallback — remarks diambil dari remarks_map jika tersedia
+                pass
 
     # ── Lebar kolom ────────────────────────────────────────────────────
     ws.column_dimensions["A"].width = 13.0
@@ -2962,7 +2984,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
     if not df_daily_cal.empty:
         # Melakukan rekonstruksi grid lengkap (karyawan x tanggal) untuk mencari sel yang benar-benar kosong di kalender
         _dates = sorted(df_daily_cal["Date"].dropna().unique())
-        _emp_list = df_result[["Nama", "Account"]].drop_duplicates("Account").to_dict("records")
+        _emp_list = df_show[["Nama", "Account"]].drop_duplicates("Account").to_dict("records")
 
         # Map data klasifikasi yang ada
         _daily_map = {}
@@ -3136,12 +3158,19 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                         f'{reason}</span>'
                     )
 
+                _ALL_KLASIFIKASI_OPTS = [
+                    "", "S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
+                    "WFA", "1/2 WFA", "WFS", "DW", "K", "Off",
+                    "HL", "ML", "WML", "OT", "RL", "H",
+                ]
+
                 # ── Rows: st.expander per karyawan ──────────────────────
+                _all_none_edits: list[dict] = []  # kumpulkan semua edit lintas karyawan
+
                 for _ri, _er in _df_none_grouped.iterrows():
                     _acc_e  = _er["Account"]
                     _name_e = _er["Name"]
                     _n_e    = int(_er["n_dates"])
-                    _prev_e = _er["dates_preview"]
 
                     _exp_label = (
                         f"**{_ri + 1}.** {_name_e}"
@@ -3151,49 +3180,103 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
 
                     with st.expander(_exp_label, expanded=False):
                         _detail_rows = _none_detail_map.get(_acc_e, [])
-                        if _detail_rows:
-                            _rows_html = ""
-                            for _si, _sd in enumerate(_detail_rows):
-                                _row_cls = (
-                                    "nt-sub-row-even"
-                                    if _si % 2 == 0
-                                    else "nt-sub-row-odd"
-                                )
-                                _rows_html += (
-                                    f'<tr class="{_row_cls}">'
-                                    f'<td class="nt-sub-date">{_sd["Date"]}</td>'
-                                    f'<td class="nt-sub-reason">'
-                                    f'{_reason_badge(_sd["Reason"])}</td>'
-                                    f'</tr>'
-                                )
-                            st.markdown(
-                                f'<div class="nt-sub-wrap">'
-                                f'<table style="width:100%;border-collapse:collapse;">'
-                                f'<thead><tr class="nt-sub-head-row">'
-                                f'<th style="padding:.38rem .8rem;text-align:left;'
-                                f'font-size:.69rem;font-weight:700;color:#94a3b8;'
-                                f'text-transform:uppercase;letter-spacing:.08em;">'
-                                f'📅 Tanggal</th>'
-                                f'<th style="padding:.38rem .8rem;text-align:left;'
-                                f'font-size:.69rem;font-weight:700;color:#94a3b8;'
-                                f'text-transform:uppercase;letter-spacing:.08em;">'
-                                f'💬 Alasan</th>'
-                                f'</tr></thead>'
-                                f'<tbody>{_rows_html}</tbody>'
-                                f'</table></div>',
-                                unsafe_allow_html=True,
-                            )
-                        else:
+                        if not _detail_rows:
                             st.markdown(
                                 '<div style="padding:.55rem 1rem;background:#f8fafc;'
                                 'border-radius:6px;font-size:.82rem;color:#94a3b8;">'
                                 'Tidak ada detail tersedia.</div>',
                                 unsafe_allow_html=True,
                             )
+                            continue
+
+                        # Bangun DataFrame untuk data_editor
+                        # Ambil remarks yang sudah tersimpan dari df_daily_cal
+                        _remarks_map: dict[str, str] = {}
+                        if not df_daily_cal.empty and "Remarks" in df_daily_cal.columns:
+                            _emp_daily = df_daily_cal[df_daily_cal["Account"] == _acc_e]
+                            _remarks_map = dict(
+                                zip(_emp_daily["Date"], _emp_daily["Remarks"])
+                            )
+
+                        _editor_rows = []
+                        for _sd in _detail_rows:
+                            _editor_rows.append({
+                                "Tanggal" : _sd["Date"],
+                                "Alasan"  : _sd["Reason"],
+                                "Edit"    : "",
+                                "Remarks" : _remarks_map.get(_sd["Date"], ""),
+                            })
+                        _editor_df = pd.DataFrame(_editor_rows)
+
+                        _edited = st.data_editor(
+                            _editor_df,
+                            key=f"_none_editor_{_acc_e}",
+                            use_container_width=True,
+                            hide_index=True,
+                            height=min(60 + len(_editor_df) * 35, 400),
+                            column_config={
+                                "Tanggal": st.column_config.TextColumn(
+                                    "📅 Tanggal",
+                                    disabled=True,
+                                    width="small",
+                                ),
+                                "Alasan": st.column_config.TextColumn(
+                                    "💬 Alasan",
+                                    disabled=True,
+                                    width="large",
+                                ),
+                                "Edit": st.column_config.SelectboxColumn(
+                                    "✏️ Edit Klasifikasi",
+                                    options=_ALL_KLASIFIKASI_OPTS,
+                                    required=False,
+                                    width="medium",
+                                    help="Pilih klasifikasi yang seharusnya untuk baris ini",
+                                ),
+                                "Remarks": st.column_config.TextColumn(
+                                    "📝 Remarks",
+                                    width="large",
+                                    help="Catatan bebas — akan muncul sebagai Comment di ekspor Excel",
+                                ),
+                            },
+                        )
+
+                        # Kumpulkan baris yang ada perubahan (Edit tidak kosong atau Remarks terisi)
+                        for _, _erow in _edited.iterrows():
+                            _edit_val    = str(_erow.get("Edit", "") or "").strip()
+                            _remarks_val = str(_erow.get("Remarks", "") or "").strip()
+                            if _edit_val or _remarks_val:
+                                _all_none_edits.append({
+                                    "account" : _acc_e,
+                                    "tanggal" : _erow["Tanggal"],
+                                    "status"  : _edit_val or None,
+                                    "remarks" : _remarks_val,
+                                })
+
+                # ── Tombol Simpan semua koreksi ─────────────────────────
+                _has_edits = any(
+                    (e["status"] or e["remarks"]) for e in _all_none_edits
+                )
+                _save_col, _ = st.columns([1, 4])
+                with _save_col:
+                    if st.button(
+                        "💾 Simpan Koreksi",
+                        type="primary",
+                        use_container_width=True,
+                        key="btn_save_none_corrections",
+                        disabled=not _has_edits,
+                    ):
+                        _n_saved = bulk_update_none_corrections(_all_none_edits)
+                        st.cache_data.clear()
+                        st.success(
+                            f"✅ **{_n_saved} baris** berhasil dikoreksi dan disimpan ke database."
+                        )
+                        st.rerun()
 
                 st.caption(
                     f"Total {_n_days_none} hari kosong "
                     f"dari {_n_emp_none} karyawan."
+                    "  ·  Isi kolom **Edit** untuk mengubah klasifikasi, "
+                    "**Remarks** untuk catatan yang akan muncul di ekspor Excel."
                 )
 
     else:

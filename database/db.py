@@ -250,6 +250,7 @@ def get_all_daily(periode: str):
                 a.tanggal, a.shift, a.tipe_shift,
                 a.jam_masuk, a.jam_keluar,
                 a.status_absensi, a.status_klasifikasi
+                COALESCE(a.catatan, '') AS catatan
             FROM absensi_harian a
             JOIN karyawan k ON k.id = a.karyawan_id
             WHERE a.periode = ?
@@ -388,3 +389,49 @@ def bulk_update_h(
                 [periode] + tanggal_list,
             )
         return cur.rowcount
+
+def bulk_update_none_corrections(
+    corrections: list[dict],
+) -> int:
+    """
+    Update status_klasifikasi dan catatan untuk baris-baris yang sebelumnya None/kosong.
+
+    Args:
+        corrections: list of dict dengan key:
+            - account   : str
+            - tanggal   : str  (format YYYY-MM-DD)
+            - status    : str  (klasifikasi baru)
+            - remarks   : str  (catatan / remarks)
+
+    Returns:
+        Jumlah record yang berhasil diupdate.
+    """
+    if not corrections:
+        return 0
+
+    updated = 0
+    with get_conn() as conn:
+        for c in corrections:
+            row = conn.execute(
+                "SELECT id FROM karyawan WHERE account = ?", (c["account"],)
+            ).fetchone()
+            if not row:
+                continue
+            karyawan_id = row["id"]
+            cur = conn.execute(
+                """
+                UPDATE absensi_harian
+                   SET status_klasifikasi = ?,
+                       catatan            = ?,
+                       is_manual_override = 1
+                 WHERE karyawan_id = ? AND tanggal = ?
+                """,
+                (
+                    c["status"] or "None",
+                    (c.get("remarks") or "").strip(),
+                    karyawan_id,
+                    c["tanggal"],
+                ),
+            )
+            updated += cur.rowcount
+    return updated
