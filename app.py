@@ -32,6 +32,7 @@ from classifiers import (
     has_status,
     SKIP_SHIFTS,
     _NOT_PUNCHED,
+    is_zero_or_dash,
 )
 
 st.set_page_config(
@@ -1146,11 +1147,15 @@ def process_file(file_bytes):
 
     pivot = pivot.sort_values(["Rules", "Nama"]).reset_index(drop=True)
     pivot.insert(0, "No.", range(1, len(pivot) + 1))
+    for _c in ("H", "PL"):
+        if _c not in pivot.columns:
+            pivot[_c] = 0
+
     result = pivot[["No.", "Nama", "Account", "Rules",
                     "S", "Late", "1/2 UL", "UL", "AL", "1/2 AL",
                     "WFA", "1/2 WFA", "WFS",
                     "DW", "K", "Off",
-                    "HL", "ML", "WML", "OT", "RL"]].copy()
+                    "HL", "ML", "WML", "OT", "RL", "H", "PL"]].copy()
 
     stats = {
         "total_rows": len(df),
