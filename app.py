@@ -3018,7 +3018,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                         "Reason":         _reason,
                         "HasRecord":      _has_db_record,
                     })
-        _df_none = pd.DataFrame(_none_rows, columns=["Account", "Name", "Date", "Shift", "Classification", "Reason"])
+        _df_none = pd.DataFrame(_none_rows, columns=["Account", "Name", "Date", "Shift", "Classification", "Reason", "HasRecord"])
 
         # ── Step 1: Group _df_none per karyawan ──────────────────────────────
         # Struktur untuk outer table (ringkasan per karyawan)
@@ -3047,7 +3047,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
 
                 # Detail map: list {Date, Reason} untuk sub-tabel
                 _none_detail_map[_acc_g] = [
-                    {"Date": row["Date"], "Reason": row["Reason"]}
+                    {"Date": row["Date"], "Reason": row["Reason"], "HasRecord": bool(row.get("HasRecord", True))}
                     for _, row in _grp.sort_values("Date").iterrows()
                 ]
 
@@ -3219,9 +3219,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                         )
 
                         # Kumpulkan baris yang ada perubahan (Edit tidak kosong atau Remarks terisi)
-                        for _, _erow in _edited.iterrows():
-                            if not _erow.get("HasRecord", True):
-                                continue  # skip baris tanpa record DB
+                        for _, _erow in _edited.iterrows():    
                             _raw_edit    = _erow.get("Edit")
                             _edit_val    = str(_raw_edit).strip() if (_raw_edit is not None and str(_raw_edit).strip() not in ("", "nan", "None", "—")) else ""
                             _remarks_val = str(_erow.get("Remarks", "") or "").strip()

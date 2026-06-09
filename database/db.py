@@ -412,7 +412,7 @@ def bulk_update_none_corrections(
             _periode    = c.get("periode", "")
 
             if not _has_record and _periode:
-                # Record tidak ada — INSERT baru
+                # Record belum ada di DB — INSERT baru
                 conn.execute(
                     """
                     INSERT OR IGNORE INTO absensi_harian
@@ -429,9 +429,9 @@ def bulk_update_none_corrections(
                     ),
                 )
                 updated += 1
-                continue  # INSERT sudah selesai, skip UPDATE
+                continue  # INSERT selesai, skip UPDATE
 
-            # Record sudah ada — UPDATE seperti sebelumnya
+            # Record sudah ada — UPDATE (tanpa filter is_deleted agar NULL pun cocok)
             if _status:
                 cur = conn.execute(
                     """
@@ -440,7 +440,6 @@ def bulk_update_none_corrections(
                            catatan            = ?,
                            is_manual_override = 1
                      WHERE karyawan_id = ? AND tanggal = ?
-                       AND is_deleted  = 0
                     """,
                     (_status, _remarks, karyawan_id, c["tanggal"]),
                 )
@@ -451,7 +450,6 @@ def bulk_update_none_corrections(
                        SET catatan            = ?,
                            is_manual_override = 1
                      WHERE karyawan_id = ? AND tanggal = ?
-                       AND is_deleted  = 0
                     """,
                     (_remarks, karyawan_id, c["tanggal"]),
                 )
