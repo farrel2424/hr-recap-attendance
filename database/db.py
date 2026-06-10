@@ -353,14 +353,16 @@ def bulk_update_h(
     periode: str,
     tanggal_list: list[str],
     rules_filter: list[str] | None = None,
+    accounts_filter: list[str] | None = None,
 ) -> int:
     """
     Set status_klasifikasi = 'H' dan is_manual_override = 1 secara massal.
 
     Args:
-        periode       : periode absensi (e.g. "2026-05")
-        tanggal_list  : list tanggal format "YYYY-MM-DD"
-        rules_filter  : list rules yang difilter; None = semua rules
+        periode         : periode absensi (e.g. "2026-05")
+        tanggal_list    : list tanggal format "YYYY-MM-DD"
+        rules_filter    : list rules yang difilter; None = semua rules
+        accounts_filter : list account spesifik; jika diisi, rules_filter diabaikan
 
     Returns:
         Jumlah record yang berhasil diupdate.
@@ -371,7 +373,30 @@ def bulk_update_h(
     with get_conn() as conn:
         ph_t = ",".join("?" * len(tanggal_list))
 
-        if rules_filter:
+        if accounts_filter is not None:
+            # Filter by account spesifik — hasil pilihan checkbox di UI
+            if not accounts_filter:
+                return 0
+            ph_a = ",".join("?" * len(accounts_filter))
+            kid_rows = conn.execute(
+                f"SELECT id FROM karyawan WHERE account IN ({ph_a})",
+                accounts_filter,
+            ).fetchall()
+            kids = [r["id"] for r in kid_rows]
+            if not kids:
+                return 0
+            ph_k = ",".join("?" * len(kids))
+            cur = conn.execute(
+                f"""UPDATE absensi_harian
+                       SET status_klasifikasi = 'H',
+                           is_manual_override = 1
+                     WHERE periode = ?
+                       AND tanggal IN ({ph_t})
+                       AND karyawan_id IN ({ph_k})
+                       AND is_deleted = 0""",
+                [periode] + tanggal_list + kids,
+            )
+        elif rules_filter:
             ph_r = ",".join("?" * len(rules_filter))
             kid_rows = conn.execute(
                 f"SELECT id FROM karyawan WHERE rules IN ({ph_r})",
@@ -402,7 +427,7 @@ def bulk_update_h(
                 [periode] + tanggal_list,
             )
         return cur.rowcount
-
+        
 def bulk_update_none_corrections(
     corrections: list[dict],
 ) -> int:
@@ -468,3 +493,29 @@ def bulk_update_none_corrections(
                 )
             updated += cur.rowcount
     return updated
+
+def get_karyawan_in_periode(periode: str, rules_filter: list[str] | None = None):
+    """Return DataFrame karyawan (account, nama, rules) dalam satu periode, opsional filter rules."""
+    with get_conn() as conn:
+        if rules_filter:
+            ph = ",".join("?" * len(rules_filter))
+            rows = conn.execute(
+                f"""SELECT DISTINCT k.account, k.nama, k.rules
+                    FROM karyawan k
+                    JOIN absensi_harian a ON a.karyawan_id = k.id
+                    WHERE a.periode = ? AND a.is_deleted = 0
+                      AND k.rules IN ({ph})
+                    ORDER BY k.rules, k.nama""",
+                [periode] + rules_filter,
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT DISTINCT k.account, k.nama, k.rules
+                   FROM karyawan k
+                   JOIN absensi_harian a ON a.karyawan_id = k.id
+                   WHERE a.periode = ? AND a.is_deleted = 0
+                   ORDER BY k.rules, k.nama""",
+                (periode,),
+            ).fetchall()
+    import pandas as pd
+    return pd.DataFrame([dict(r) for r in rows])

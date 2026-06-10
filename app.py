@@ -19,6 +19,7 @@ from database.db import (
     soft_delete_periode,
     get_dates_in_periode,
     get_rules_in_periode,
+    get_karyawan_in_periode,
     bulk_update_h,
     bulk_update_none_corrections,
 )
@@ -2145,13 +2146,59 @@ if st.session_state.get("show_h_panel", False):
                 key="hp_rules_select",
             )
 
-        if _hp_sel_dates:
-            _hp_rules_display = (
-                ", ".join(_hp_sel_rules) if _hp_sel_rules else "**semua rules**"
+        # ── Tabel Karyawan Terdampak ──────────────────────────────────────
+        _hp_checked_accounts: list[str] = []
+        _hp_emp_df = get_karyawan_in_periode(
+            _hp_sel_periode, _hp_sel_rules if _hp_sel_rules else None
+        )
+
+        if not _hp_emp_df.empty:
+            _hp_emp_disp = _hp_emp_df.copy()
+            _hp_emp_disp.insert(0, "Pilih", True)
+            _hp_emp_disp.insert(0, "No.", range(1, len(_hp_emp_disp) + 1))
+
+            # Key berubah saat periode atau rules berubah → checkbox reset otomatis
+            _hp_emp_key = (
+                "hp_emp_"
+                + _hp_sel_periode
+                + "_"
+                + "_".join(sorted(_hp_sel_rules or []))
             )
+
+            st.markdown(
+                f'<div style="font-size:0.82rem;font-weight:600;'
+                f'color:var(--text-secondary);margin:.9rem 0 .4rem;">'
+                f'👥 Karyawan terdampak — <b>{len(_hp_emp_disp)}</b> orang &nbsp;'
+                f'<span style="color:var(--text-faint);font-weight:400;">'
+                f'· kosongkan checkbox untuk mengecualikan</span></div>',
+                unsafe_allow_html=True,
+            )
+            _hp_edited_emp = st.data_editor(
+                _hp_emp_disp,
+                key=_hp_emp_key,
+                use_container_width=True,
+                hide_index=True,
+                height=min(60 + len(_hp_emp_disp) * 35, 380),
+                column_config={
+                    "Pilih"  : st.column_config.CheckboxColumn("✓", width="small"),
+                    "No."    : st.column_config.NumberColumn("No.", width="small"),
+                    "account": st.column_config.TextColumn(
+                        "Account", disabled=True, width="medium"),
+                    "nama"   : st.column_config.TextColumn(
+                        "Nama", disabled=True, width="large"),
+                    "rules"  : st.column_config.TextColumn(
+                        "Rules", disabled=True, width="medium"),
+                },
+            )
+            _hp_checked_accounts = (
+                _hp_edited_emp[_hp_edited_emp["Pilih"]]["account"].tolist()
+            )
+
+        if _hp_sel_dates:
+            _n_checked = len(_hp_checked_accounts)
             st.info(
                 f"ℹ️ Akan mengubah status menjadi **H** pada **{len(_hp_sel_dates)} tanggal** "
-                f"yang dipilih untuk {_hp_rules_display}."
+                f"untuk **{_n_checked} karyawan** yang dipilih."
             )
             _hpc1, _hpc2 = st.columns([1, 5])
             with _hpc1:
@@ -2160,12 +2207,14 @@ if st.session_state.get("show_h_panel", False):
                     type="primary",
                     use_container_width=True,
                     key="btn_apply_h",
+                    disabled=not _hp_checked_accounts,
                 ):
                     with st.spinner("⚙️ Menerapkan koreksi..."):
                         _hp_n = bulk_update_h(
                             _hp_sel_periode,
                             _hp_sel_dates,
                             _hp_sel_rules if _hp_sel_rules else None,
+                            accounts_filter=_hp_checked_accounts,
                         )
                     st.cache_data.clear()
                     st.success(
@@ -2176,7 +2225,7 @@ if st.session_state.get("show_h_panel", False):
             st.markdown(
                 '<div style="background:#f1f5f9;border-radius:10px;padding:0.8rem 1.2rem;'
                 'color:#64748b;font-size:0.85rem;">'
-                '⬅️ Pilih tanggal merah terlebih dahulu</div>',
+                '⬅️ Pilih tanggal terlebih dahulu</div>',
                 unsafe_allow_html=True,
             )
         st.markdown('</div>', unsafe_allow_html=True)
