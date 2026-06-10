@@ -762,26 +762,21 @@ def get_employee_daily_from_db(account, periode):
     _catatan_lst  = [str(v or "").strip() for v in df_db["catatan"].tolist()]
     _override_lst = df_db["is_manual_override"].fillna(0).astype(bool).tolist()
 
-    rows = [
-        {
-            "Tanggal"         : _tanggal_lst[i],
-            "Shift"           : _shift_lst[i],
-            "Jam Masuk"       : _jm_lst[i],
-            "Jam Keluar"      : _jk_lst[i],
-            "Status"          : _sab_lst[i],
-            "Jam Kerja"       : _jkerja_lst[i],
-            "Klasifikasi"     : _klas_disps[i],
-            "Klasifikasi_raw" : _klas_raws[i],
-            "Catatan"         : _catatan_lst[i],
-            "Manual_Override" : _override_lst[i],
-        }
-        for i in range(len(df_db))
-    ]
-
-    if not rows:
+    if not _tanggal_lst:
         return pd.DataFrame(), pd.DataFrame()
 
-    detail_df = pd.DataFrame(rows).sort_values("Tanggal").reset_index(drop=True)
+    detail_df = pd.DataFrame({
+        "Tanggal"        : _tanggal_lst,
+        "Shift"          : _shift_lst,
+        "Jam Masuk"      : _jm_lst,
+        "Jam Keluar"     : _jk_lst,
+        "Status"         : _sab_lst,
+        "Jam Kerja"      : _jkerja_lst,
+        "Klasifikasi"    : _klas_disps,
+        "Klasifikasi_raw": _klas_raws,
+        "Catatan"        : _catatan_lst,
+        "Manual_Override": _override_lst,
+    }).sort_values("Tanggal").reset_index(drop=True)
     detail_df.insert(0, "No.", range(1, len(detail_df) + 1))
 
     n_shift   = int(detail_df["Klasifikasi_raw"].apply(lambda x: has_status(x, "S")).sum())
@@ -1275,13 +1270,14 @@ def _populate_calendar_ws(ws, df_daily, df_employees):
         for _acc, _date, _shift, _klas, _rmk in zip(
             _dm_accs, _dm_dates, _dm_shifts, _dm_klas, _dm_remarks
         ):
-            if _acc not in daily_map:
-                daily_map[_acc] = {}
-            daily_map[_acc][_date] = (
-                str(_shift) if _shift else "",
-                _klas,
-                str(_rmk).strip(),
-            )
+            # Precompute label, fill, bold — hindari lookup berulang di inner loop
+            _lbl = _LABEL_MAP.get(_klas, "")
+            _fil = _CELL_FILL.get(_lbl) if _lbl else None
+            _bld = _lbl in ("DW", "K")
+            _a   = str(_acc)
+            if _a not in daily_map:
+                daily_map[_a] = {}
+            daily_map[_a][str(_date)] = (_lbl, _fil, _bld, str(_rmk).strip())
 
     n_date_cols = len(dates)
 
@@ -1333,9 +1329,15 @@ def _populate_calendar_ws(ws, df_daily, df_employees):
     # ── Baris 3+: data per karyawan ────────────────────────────────────
     emp_list = df_employees[["Nama", "Account"]].drop_duplicates("Account").to_dict("records")
 
+    # Definisikan Font sekali — dihindari N×M pembuatan objek baru per sel
+    _FONT_D_NORMAL = Font(name="Arial", size=9, bold=False)
+    _FONT_D_BOLD   = Font(name="Arial", size=9, bold=True)
+
     for ri, emp in enumerate(emp_list):
         er  = ri + 3
         acc = emp["Account"]
+        # Hoist lookup per-karyawan keluar dari inner date loop
+        _emp_day_map = daily_map.get(str(acc), {})
 
         for ci_fix, val_fix in [(1, ri + 1), (2, None), (3, emp["Nama"]), (4, acc)]:
             c = ws.cell(er, ci_fix)
@@ -1350,18 +1352,17 @@ def _populate_calendar_ws(ws, df_daily, df_employees):
             c.border    = BORDER
             c.alignment = CENTER
 
-            _cell_data = daily_map.get(acc, {}).get(d, ("", None, ""))
-            shift_t = _cell_data[0]
-            klas    = _cell_data[1]
-            _rmk    = _cell_data[2] if len(_cell_data) > 2 else ""
-            label = _get_cell_display(shift_t, klas)
+            _cached = _emp_day_map.get(str(d))
+            if _cached:
+                label, fill, is_bold, _rmk = _cached
+            else:
+                label, fill, is_bold, _rmk = "", None, False, ""
 
             c.value = label
-            c.font  = Font(name="Arial", size=9, bold=(label in ("DW", "K")))
-            if label and label in _CELL_FILL:
-                c.fill = _CELL_FILL[label]
+            c.font  = _FONT_D_BOLD if is_bold else _FONT_D_NORMAL
+            if fill:
+                c.fill = fill
 
-            # ── Remarks → openpyxl Comment ──────────────────────────
             if _rmk:
                 _comment = Comment(text=_rmk, author="Absensi Rekap")
                 _comment.width  = 200
@@ -3192,19 +3193,45 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
         _df_none_work   = _grid[_grid["_label"] == ""].drop(columns=["_label"]).copy()
 
         # Hitung Reason — hanya untuk baris None (jauh lebih sedikit dari grid penuh)
-        def _calc_reason(row):
-            if not row["HasRecord"]:
-                return "Tidak ada record di database (excel)"
-            return determine_reason(
-                shift              = str(row["Shift"] or ""),
-                att_result         = str(row["AttResult"] or ""),
-                status_klasifikasi = row["Classification"],
-                jam_masuk          = str(row["JamMasuk"] or ""),
-                jam_keluar         = str(row["JamKeluar"] or ""),
-                has_alt_leave      = bool(row["HasAltLeave"] or 0),
-            )
+        import numpy as _np_r
 
-        _df_none_work["Reason"] = _df_none_work.apply(_calc_reason, axis=1)
+        # Vectorized reason — menggantikan row-wise apply(_calc_reason)
+        _nr_att   = _df_none_work["AttResult"].fillna("").astype(str).str.strip()
+        _nr_shift = _df_none_work["Shift"].fillna("").astype(str).str.strip()
+        _nr_klas  = _df_none_work["Classification"].fillna("").astype(str).str.strip()
+        _nr_rec   = _df_none_work["HasRecord"].fillna(True).astype(bool)
+        _nr_alt   = _df_none_work["HasAltLeave"].fillna(0).astype(bool)
+
+        _no_klas  = _nr_klas.isin(["", "None", "nan"])
+        # Baris dengan klas non-standar (bukan kosong/None/nan) → fallback "Tidak dapat ditentukan"
+        _c_unk_kls = (~_no_klas).values
+
+        _c_no_rec = (~_nr_rec).values
+        _c_no_att = _nr_att.isin(["", "--", "nan", "None"]).values
+        _c_skip   = _nr_shift.isin(list(SKIP_SHIFTS)).values
+        _c_alt    = (_no_klas & _nr_alt).values
+        _c_calc   = (_no_klas & ~_nr_alt
+                     & _nr_att.str.contains("Calculating", na=False)).values
+
+        # String per-baris untuk alasan yang bervariasi
+        _skip_rsn = ("Shift '" + _nr_shift + "' dilewati").where(
+            _nr_shift != "", "Shift (kosong) dilewati"
+        ).to_numpy()
+        _unrc_rsn = ("Att result tidak dikenali: '" + _nr_att + "'").to_numpy()
+
+        _df_none_work["Reason"] = _np_r.select(
+            [_c_no_rec, _c_no_att, _c_skip, _c_unk_kls, _c_alt, _c_calc],
+            [
+                "Tidak ada record di database (excel)",
+                "Att result tidak tercatat",
+                _skip_rsn,
+                "Tidak dapat ditentukan",
+                "Leave tidak dikenali (年假/调休假/成长假)",
+                "Tidak tergolong ke dalam S, Off, H dan jenis leave apapun",
+            ],
+            default=_unrc_rsn,
+        )
+        
         _df_none = _df_none_work[
             ["Account", "Name", "Date", "Shift", "AttResult",
              "Classification", "Reason", "HasRecord"]
