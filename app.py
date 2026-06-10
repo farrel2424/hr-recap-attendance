@@ -2225,29 +2225,38 @@ if st.session_state.get("show_h_panel", False):
 
         with _hp2:
             _hp_all_dates = get_dates_in_periode(_hp_sel_periode)
+            _hp_fk = st.session_state.get("_hp_form_key", 0)
             _hp_sel_dates = st.multiselect(
                 "📆 Pilih Tanggal",
                 options=_hp_all_dates,
                 placeholder="Klik untuk memilih tanggal...",
-                key="hp_dates_select",
+                key=f"hp_dates_select_{_hp_fk}",
             )
 
         with _hp3:
             _hp_all_rules = get_rules_in_periode(_hp_sel_periode)
+            _hp_fk = st.session_state.get("_hp_form_key", 0)
             _hp_sel_rules = st.multiselect(
                 "🏷️ Filter Rules (kosong = semua)",
                 options=_hp_all_rules,
                 placeholder="Semua Rules",
-                key="hp_rules_select",
+                key=f"hp_rules_select_{_hp_fk}",
             )
 
         # ── Tabel Karyawan Terdampak ──────────────────────────────────────
         _hp_checked_accounts: list[str] = []
-        _hp_emp_df = get_karyawan_in_periode(
-            _hp_sel_periode, _hp_sel_rules if _hp_sel_rules else None
-        )
 
-        if not _hp_emp_df.empty:
+        if not _hp_sel_rules:
+            st.markdown(
+                '<div style="background:#f1f5f9;border-radius:10px;padding:0.8rem 1.2rem;'
+                'color:#64748b;font-size:0.85rem;margin-top:0.5rem;">'
+                '⬅️ Pilih Rules terlebih dahulu untuk melihat daftar karyawan</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            _hp_emp_df = get_karyawan_in_periode(_hp_sel_periode, _hp_sel_rules)
+
+        if _hp_sel_rules and not _hp_emp_df.empty:
             _hp_emp_disp = _hp_emp_df.copy()
             _hp_emp_disp.insert(0, "Pilih", True)
             _hp_emp_disp.insert(0, "No.", range(1, len(_hp_emp_disp) + 1))
@@ -2312,6 +2321,11 @@ if st.session_state.get("show_h_panel", False):
                             accounts_filter=_hp_checked_accounts,
                         )
                     st.cache_data.clear()
+                    # Reset pilihan via key suffix — tidak bisa set widget key
+                    # setelah widget dirender di run yang sama
+                    st.session_state["_hp_form_key"] = (
+                        st.session_state.get("_hp_form_key", 0) + 1
+                    )
                     st.success(
                         f"✅ **{_hp_n} record** berhasil diupdate ke **H** "
                         f"pada {len(_hp_sel_dates)} tanggal di periode {_hp_sel_periode}."
