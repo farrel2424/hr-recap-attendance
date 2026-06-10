@@ -638,47 +638,78 @@ def get_employee_daily(file_bytes, account):
         except Exception:
             return 0.0
 
-    df_emp["Tanggal"]   = df_emp["Time_Date"].astype(str).apply(parse_date_from_time)
-    df_emp["Jam Kerja"] = df_emp["Actual working hours(Hour)"].apply(_parse_hours)
+    # Vectorize Tanggal extraction (menggantikan per-row regex via parse_date_from_time)
+    _td_raw       = df_emp["Time_Date"].astype(str)
+    _td_extracted = _td_raw.str.extract(r'(\d{4}/\d{2}/\d{2})')[0]
+    df_emp["Tanggal"] = _td_extracted.where(_td_extracted.notna(), _td_raw.str.strip())
+
+    # Vectorize Jam Kerja parsing (menggantikan per-row _parse_hours)
+    df_emp["Jam Kerja"] = pd.to_numeric(
+        df_emp["Actual working hours(Hour)"], errors="coerce"
+    ).fillna(0.0)
+
+    _n_ge = len(df_emp)
+    # Pre-extract semua kolom ke Python list — eliminasi overhead pandas per-row
+    _ge_tanggal  = df_emp["Tanggal"].tolist()
+    _ge_shift    = df_emp["Shift"].tolist()
+    _ge_earliest = df_emp["Earliest"].tolist()
+    _ge_latest   = df_emp["Latest"].tolist()
+    _ge_att      = df_emp["Attendance results"].tolist()
+    _ge_jamkerja = df_emp["Jam Kerja"].tolist()
+    _ge_leave    = df_emp["Leave & Overtime Application"].tolist()
+    _ge_abs      = df_emp["Number of absences(Count)"].tolist()
+    _ge_ksick    = df_emp[k_sick_col].tolist()       if k_sick_col       else [None] * _n_ge
+    _ge_al       = df_emp[al_col].tolist()           if al_col           else [None] * _n_ge
+    _ge_ul       = df_emp[ul_col].tolist()           if ul_col           else [None] * _n_ge
+    _ge_dlate    = df_emp[dur_late_col].tolist()     if dur_late_col     else [None] * _n_ge
+    _ge_dearly   = df_emp[dur_early_col].tolist()    if dur_early_col    else [None] * _n_ge
+    _ge_wfh      = df_emp[wfh_col].tolist()          if wfh_col          else [None] * _n_ge
+    _ge_offsite  = df_emp[offsite_col].tolist()      if offsite_col      else [None] * _n_ge
+    _ge_missed   = df_emp[missed_punch_col].tolist() if missed_punch_col else [None] * _n_ge
+    _ge_hl       = df_emp[hl_col].tolist()           if hl_col           else [None] * _n_ge
+    _ge_ml       = df_emp[ml_col].tolist()           if ml_col           else [None] * _n_ge
+    _ge_wml      = df_emp[wml_col].tolist()          if wml_col          else [None] * _n_ge
+    _ge_ot       = df_emp[ot_col].tolist()           if ot_col           else [None] * _n_ge
+    _ge_rl       = df_emp[rl_col].tolist()           if rl_col           else [None] * _n_ge
+    _ge_pl       = df_emp[pl_col].tolist()           if pl_col           else [None] * _n_ge
+
+    # Pre-compute display string secara vectorial
+    _ge_jm_disp  = [str(v).strip() if pd.notna(v) else "--" for v in _ge_earliest]
+    _ge_jk_disp  = [str(v).strip() if pd.notna(v) else "--" for v in _ge_latest]
+    _ge_att_disp = [str(v).strip() if pd.notna(v) else "--" for v in _ge_att]
 
     rows = []
-    for _, r in df_emp.iterrows():
-        shift_clean = str(r["Shift"]).strip() if isinstance(r["Shift"], str) else ""
-
+    for i in range(_n_ge):
         _klas_raw = classify(
-            r["Earliest"], r["Shift"], r["Attendance results"],
-            latest_raw=r["Latest"],
-            leave_app=r.get("Leave & Overtime Application"),
-            absences_count=r.get("Number of absences(Count)"),
-            k_sick_count=r.get(k_sick_col)     if k_sick_col    else None,
-            al_count=r.get(al_col)              if al_col        else None,
-            ul_count=r.get(ul_col)              if ul_col        else None,
-            duration_late=r.get(dur_late_col)   if dur_late_col  else None,
-            duration_early=r.get(dur_early_col) if dur_early_col else None,
-            wfh_count=r.get(wfh_col)            if wfh_col       else None,
-            offsite_hour=r.get(offsite_col)     if offsite_col   else None,
-            missed_punch_count=r.get(missed_punch_col) if missed_punch_col else None,
-            hl_count=r.get(hl_col)   if hl_col   else None,
-            ml_count=r.get(ml_col)   if ml_col   else None,
-            wml_count=r.get(wml_col) if wml_col  else None,
-            ot_count=r.get(ot_col)   if ot_col   else None,
-            rl_count=r.get(rl_col)   if rl_col   else None,
-            pl_count=r.get(pl_col)   if pl_col   else None,
+            _ge_earliest[i], _ge_shift[i], _ge_att[i],
+            latest_raw=_ge_latest[i],
+            leave_app=_ge_leave[i],
+            absences_count=_ge_abs[i],
+            k_sick_count=_ge_ksick[i],
+            al_count=_ge_al[i],
+            ul_count=_ge_ul[i],
+            duration_late=_ge_dlate[i],
+            duration_early=_ge_dearly[i],
+            wfh_count=_ge_wfh[i],
+            offsite_hour=_ge_offsite[i],
+            missed_punch_count=_ge_missed[i],
+            hl_count=_ge_hl[i],
+            ml_count=_ge_ml[i],
+            wml_count=_ge_wml[i],
+            ot_count=_ge_ot[i],
+            rl_count=_ge_rl[i],
+            pl_count=_ge_pl[i],
         )
-
         if _klas_raw is None:
             _klas_raw = ["None"]
-
-        _klas_display = _fmt_klasifikasi(_klas_raw)
-
         rows.append({
-            "Tanggal"        : r["Tanggal"],
-            "Shift"          : shift_clean,
-            "Jam Masuk"      : str(r["Earliest"]).strip() if pd.notna(r["Earliest"]) else "--",
-            "Jam Keluar"     : str(r["Latest"]).strip()   if pd.notna(r["Latest"])   else "--",
-            "Status"         : str(r["Attendance results"]).strip() if pd.notna(r["Attendance results"]) else "--",
-            "Jam Kerja"      : r["Jam Kerja"],
-            "Klasifikasi"    : _klas_display,
+            "Tanggal"        : _ge_tanggal[i],
+            "Shift"          : str(_ge_shift[i]).strip() if isinstance(_ge_shift[i], str) else "",
+            "Jam Masuk"      : _ge_jm_disp[i],
+            "Jam Keluar"     : _ge_jk_disp[i],
+            "Status"         : _ge_att_disp[i],
+            "Jam Kerja"      : _ge_jamkerja[i],
+            "Klasifikasi"    : _fmt_klasifikasi(_klas_raw),
             "Klasifikasi_raw": _klas_raw,
         })
 
@@ -702,36 +733,50 @@ def get_employee_daily_from_db(account, periode):
     if df_db.empty:
         return pd.DataFrame(), pd.DataFrame()
 
-    rows = []
-    for _, r in df_db.iterrows():
-        klas_str  = str(r.get("status_klasifikasi") or "").strip()
-        if "|" in klas_str:
-            klas_raw = [s.strip() for s in klas_str.split("|")]
-        elif klas_str:
-            _tmp = klas_str.replace("1/2", "\x00HALF\x00")
-            _parts = [p.replace("\x00HALF\x00", "1/2").strip() for p in _tmp.split("/")]
-            klas_raw = [p for p in _parts if p]
-        else:
-            klas_raw = ["None"]
+    def _parse_klas_db(v) -> list[str]:
+        """Parse status_klasifikasi dari DB ke list — identik logika original."""
+        s = str(v or "").strip()
+        if not s or s == "nan":
+            return ["None"]
+        if "|" in s:
+            parts = [p.strip() for p in s.split("|") if p.strip()]
+            return parts if parts else ["None"]
+        tmp   = s.replace("1/2", "\x00HALF\x00")
+        parts = [p.replace("\x00HALF\x00", "1/2").strip() for p in tmp.split("/")]
+        parts = [p for p in parts if p]
+        return parts if parts else ["None"]
 
-        klas_disp = _fmt_klasifikasi(klas_raw)
+    def _to_str_or_dash(v) -> str:
+        return str(v or "").strip() or "--"
 
-        jam_masuk  = str(r.get("jam_masuk")  or "").strip() or "--"
-        jam_keluar = str(r.get("jam_keluar") or "").strip() or "--"
-        status_ab  = str(r.get("status_absensi") or "").strip() or "--"
+    # Vectorize semua ekstraksi kolom
+    _klas_raws  = [_parse_klas_db(v) for v in df_db["status_klasifikasi"].tolist()]
+    _klas_disps = [_fmt_klasifikasi(kr) for kr in _klas_raws]
 
-        rows.append({
-            "Tanggal"         : r["tanggal"],
-            "Shift"           : str(r.get("shift") or "").strip() or "--",
-            "Jam Masuk"       : jam_masuk,
-            "Jam Keluar"      : jam_keluar,
-            "Status"          : status_ab,
-            "Jam Kerja"       : float(r.get("jam_kerja") or 0),
-            "Klasifikasi"     : klas_disp,
-            "Klasifikasi_raw" : klas_raw,
-            "Catatan"         : str(r.get("catatan") or "").strip(),
-            "Manual_Override" : bool(r.get("is_manual_override") or 0),
-        })
+    _tanggal_lst  = df_db["tanggal"].tolist()
+    _shift_lst    = [_to_str_or_dash(v) for v in df_db["shift"].tolist()]
+    _jm_lst       = [_to_str_or_dash(v) for v in df_db["jam_masuk"].tolist()]
+    _jk_lst       = [_to_str_or_dash(v) for v in df_db["jam_keluar"].tolist()]
+    _sab_lst      = [_to_str_or_dash(v) for v in df_db["status_absensi"].tolist()]
+    _jkerja_lst   = df_db["jam_kerja"].fillna(0).astype(float).tolist()
+    _catatan_lst  = [str(v or "").strip() for v in df_db["catatan"].tolist()]
+    _override_lst = df_db["is_manual_override"].fillna(0).astype(bool).tolist()
+
+    rows = [
+        {
+            "Tanggal"         : _tanggal_lst[i],
+            "Shift"           : _shift_lst[i],
+            "Jam Masuk"       : _jm_lst[i],
+            "Jam Keluar"      : _jk_lst[i],
+            "Status"          : _sab_lst[i],
+            "Jam Kerja"       : _jkerja_lst[i],
+            "Klasifikasi"     : _klas_disps[i],
+            "Klasifikasi_raw" : _klas_raws[i],
+            "Catatan"         : _catatan_lst[i],
+            "Manual_Override" : _override_lst[i],
+        }
+        for i in range(len(df_db))
+    ]
 
     if not rows:
         return pd.DataFrame(), pd.DataFrame()
@@ -779,45 +824,70 @@ def get_all_daily_for_calendar(file_bytes):
     df_all = df_all[df_all["Account"].notna() & df_all["Rules"].notna()]
     df_all = df_all[~df_all["Account"].astype(str).str.strip().isin(["", "--"])]
 
+    # Vectorize ekstraksi tanggal — menggantikan per-row re.search
+    _date_parts = df_all["Time_Date"].astype(str).str.extract(r'(\d{4})/(\d{2})/(\d{2})')
+    _has_date   = _date_parts.notna().all(axis=1)
+    df_all      = df_all[_has_date].reset_index(drop=True)
+    _date_parts = _date_parts[_has_date].reset_index(drop=True)
+    _date_strs  = (
+        _date_parts[0] + "-" + _date_parts[1] + "-" + _date_parts[2]
+    ).tolist()
+
+    _n_gad = len(df_all)
+
+    # Pre-extract semua kolom ke Python list
+    _gad_acc     = df_all["Account"].astype(str).str.strip().tolist()
+    _gad_name    = df_all["Name"].where(df_all["Name"].notna(), "").astype(str).str.strip().tolist()
+    _gad_shift_s = [str(v).strip() if isinstance(v, str) else "" for v in df_all["Shift"].tolist()]
+    _gad_shift   = df_all["Shift"].tolist()
+    _gad_early   = df_all["Earliest"].tolist()
+    _gad_att     = df_all["Attendance results"].tolist()
+    _gad_latest  = df_all["Latest"].tolist()
+    _gad_leave   = df_all["Leave & Overtime Application"].tolist() \
+                   if "Leave & Overtime Application" in df_all.columns else [None] * _n_gad
+    _gad_abs     = df_all["Number of absences(Count)"].tolist() \
+                   if "Number of absences(Count)" in df_all.columns else [None] * _n_gad
+    _gad_ksick   = df_all[k_sick_col].tolist()       if k_sick_col       else [None] * _n_gad
+    _gad_al      = df_all[al_col].tolist()           if al_col           else [None] * _n_gad
+    _gad_ul      = df_all[ul_col].tolist()           if ul_col           else [None] * _n_gad
+    _gad_dlate   = df_all[dur_late_col].tolist()     if dur_late_col     else [None] * _n_gad
+    _gad_dearly  = df_all[dur_early_col].tolist()    if dur_early_col    else [None] * _n_gad
+    _gad_wfh     = df_all[wfh_col].tolist()          if wfh_col          else [None] * _n_gad
+    _gad_offsite = df_all[offsite_col].tolist()      if offsite_col      else [None] * _n_gad
+    _gad_missed  = df_all[missed_punch_col].tolist() if missed_punch_col else [None] * _n_gad
+    _gad_hl      = df_all[hl_col].tolist()           if hl_col           else [None] * _n_gad
+    _gad_ml      = df_all[ml_col].tolist()           if ml_col           else [None] * _n_gad
+    _gad_wml     = df_all[wml_col].tolist()          if wml_col          else [None] * _n_gad
+    _gad_ot      = df_all[ot_col].tolist()           if ot_col           else [None] * _n_gad
+    _gad_rl      = df_all[rl_col].tolist()           if rl_col           else [None] * _n_gad
+
     rows = []
-    for _, r in df_all.iterrows():
-        account = str(r["Account"]).strip()
-        name    = str(r["Name"]).strip() if pd.notna(r.get("Name")) else ""
-        shift_t = str(r["Shift"]).strip() if isinstance(r["Shift"], str) else ""
-
-        raw_time = str(r.get("Time_Date", ""))
-        m = re.search(r'(\d{4})/(\d{2})/(\d{2})', raw_time)
-        if not m:
-            continue
-        date_str = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
-
+    for i in range(_n_gad):
         klas_raw = classify(
-            r["Earliest"], r["Shift"], r["Attendance results"],
-            latest_raw=r["Latest"],
-            leave_app=r.get("Leave & Overtime Application"),
-            absences_count=r.get("Number of absences(Count)"),
-            k_sick_count=r.get(k_sick_col)     if k_sick_col    else None,
-            al_count=r.get(al_col)              if al_col        else None,
-            ul_count=r.get(ul_col)              if ul_col        else None,
-            duration_late=r.get(dur_late_col)   if dur_late_col  else None,
-            duration_early=r.get(dur_early_col) if dur_early_col else None,
-            wfh_count=r.get(wfh_col)            if wfh_col       else None,
-            offsite_hour=r.get(offsite_col)     if offsite_col   else None,
-            missed_punch_count=r.get(missed_punch_col) if missed_punch_col else None,
-            hl_count=r.get(hl_col)   if hl_col   else None,
-            ml_count=r.get(ml_col)   if ml_col   else None,
-            wml_count=r.get(wml_col) if wml_col  else None,
-            ot_count=r.get(ot_col)   if ot_col   else None,
-            rl_count=r.get(rl_col)   if rl_col   else None,
+            _gad_early[i], _gad_shift[i], _gad_att[i],
+            latest_raw=_gad_latest[i],
+            leave_app=_gad_leave[i],
+            absences_count=_gad_abs[i],
+            k_sick_count=_gad_ksick[i],
+            al_count=_gad_al[i],
+            ul_count=_gad_ul[i],
+            duration_late=_gad_dlate[i],
+            duration_early=_gad_dearly[i],
+            wfh_count=_gad_wfh[i],
+            offsite_hour=_gad_offsite[i],
+            missed_punch_count=_gad_missed[i],
+            hl_count=_gad_hl[i],
+            ml_count=_gad_ml[i],
+            wml_count=_gad_wml[i],
+            ot_count=_gad_ot[i],
+            rl_count=_gad_rl[i],
         )
-        classification = klas_raw[0] if klas_raw else None
-
         rows.append({
-            "Account":        account,
-            "Name":           name,
-            "Date":           date_str,
-            "Shift":          shift_t,
-            "Classification": classification,
+            "Account":        _gad_acc[i],
+            "Name":           _gad_name[i],
+            "Date":           _date_strs[i],
+            "Shift":          _gad_shift_s[i],
+            "Classification": klas_raw[0] if klas_raw else None,
         })
     return pd.DataFrame(rows)
 
@@ -1076,28 +1146,45 @@ def process_file(file_bytes):
     df = df[df["Account"].notna() & df["Rules"].notna()]
     df = df[~df["Account"].astype(str).str.strip().isin(["", "--"])]
 
-    df["_statuses"] = df.apply(
-        lambda r: classify(
-            r["Earliest"], r["Shift"], r["Attendance results"],
-            latest_raw=r["Latest"],
-            leave_app=r["Leave & Overtime Application"],
-            absences_count=r["Number of absences(Count)"],
-            k_sick_count=r.get(k_sick_col)     if k_sick_col    else None,
-            al_count=r.get(al_col)              if al_col        else None,
-            ul_count=r.get(ul_col)              if ul_col        else None,
-            duration_late=r.get(dur_late_col)   if dur_late_col  else None,
-            duration_early=r.get(dur_early_col) if dur_early_col else None,
-            wfh_count=r.get(wfh_col)            if wfh_col       else None,
-            offsite_hour=r.get(offsite_col)     if offsite_col   else None,
-            missed_punch_count=r.get(missed_punch_col) if missed_punch_col else None,
-            hl_count=r.get(hl_col)   if hl_col   else None,
-            ml_count=r.get(ml_col)   if ml_col   else None,
-            wml_count=r.get(wml_col) if wml_col  else None,
-            ot_count=r.get(ot_col)   if ot_col   else None,
-            rl_count=r.get(rl_col)   if rl_col   else None,
-        ),
-        axis=1,
-    )
+    _n_pf    = len(df)
+    _pf_e    = df["Earliest"].tolist()
+    _pf_s    = df["Shift"].tolist()
+    _pf_a    = df["Attendance results"].tolist()
+    _pf_la   = df["Latest"].tolist()
+    _pf_lv   = df["Leave & Overtime Application"].tolist()
+    _pf_ab   = df["Number of absences(Count)"].tolist()
+    _pf_ks   = df[k_sick_col].tolist()       if k_sick_col       else [None] * _n_pf
+    _pf_al   = df[al_col].tolist()           if al_col           else [None] * _n_pf
+    _pf_ul   = df[ul_col].tolist()           if ul_col           else [None] * _n_pf
+    _pf_dl   = df[dur_late_col].tolist()     if dur_late_col     else [None] * _n_pf
+    _pf_de   = df[dur_early_col].tolist()    if dur_early_col    else [None] * _n_pf
+    _pf_wf   = df[wfh_col].tolist()          if wfh_col          else [None] * _n_pf
+    _pf_of   = df[offsite_col].tolist()      if offsite_col      else [None] * _n_pf
+    _pf_mp   = df[missed_punch_col].tolist() if missed_punch_col else [None] * _n_pf
+    _pf_hl   = df[hl_col].tolist()           if hl_col           else [None] * _n_pf
+    _pf_ml   = df[ml_col].tolist()           if ml_col           else [None] * _n_pf
+    _pf_wml  = df[wml_col].tolist()          if wml_col          else [None] * _n_pf
+    _pf_ot   = df[ot_col].tolist()           if ot_col           else [None] * _n_pf
+    _pf_rl   = df[rl_col].tolist()           if rl_col           else [None] * _n_pf
+
+    df["_statuses"] = [
+        classify(
+            e, s, a,
+            latest_raw=la, leave_app=lv, absences_count=ab,
+            k_sick_count=ks, al_count=al, ul_count=ul,
+            duration_late=dl, duration_early=de,
+            wfh_count=wf, offsite_hour=of_,
+            missed_punch_count=mp,
+            hl_count=hl, ml_count=ml, wml_count=wm,
+            ot_count=ot, rl_count=rl,
+        )
+        for e, s, a, la, lv, ab, ks, al, ul, dl, de, wf, of_, mp, hl, ml, wm, ot, rl in zip(
+            _pf_e, _pf_s, _pf_a, _pf_la, _pf_lv, _pf_ab,
+            _pf_ks, _pf_al, _pf_ul, _pf_dl, _pf_de,
+            _pf_wf, _pf_of, _pf_mp,
+            _pf_hl, _pf_ml, _pf_wml, _pf_ot, _pf_rl,
+        )
+    ]
 
     all_employees = (
         df.groupby("Account")["Rules"]
