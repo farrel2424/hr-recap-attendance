@@ -822,6 +822,7 @@ def get_all_daily_for_calendar(file_bytes):
     return pd.DataFrame(rows)
 
 
+@st.cache_data(show_spinner=False)
 def _get_all_daily_from_db(periode):
     if not periode:
         return pd.DataFrame(columns=["Account", "Name", "Date", "Shift", "Classification"])
@@ -832,29 +833,24 @@ def _get_all_daily_from_db(periode):
     if df_db.empty:
         return pd.DataFrame(columns=["Account", "Name", "Date", "Shift", "Classification"])
 
-    rows = []
-    for _, r in df_db.iterrows():
-        klas_str = str(r.get("status_klasifikasi") or "").strip()
-        if "|" in klas_str:
-            parts = [p.strip() for p in klas_str.split("|")]
-            klas = parts[0] if parts else None
-        else:
-            klas = klas_str if klas_str else None
+    # Vectorized: ambil segmen pertama dari pipe-separated classification
+    _klas_raw = df_db["status_klasifikasi"].fillna("").astype(str).str.strip()
+    _classification = _klas_raw.str.split("|").str[0].str.strip()
+    _classification = _classification.where(_classification != "", None)
 
-        rows.append({
-            "Account":        str(r["account"]).strip(),
-            "Name":           str(r["nama"]).strip(),
-            "Date":           str(r["tanggal"]).strip(),
-            "Shift":          str(r.get("shift") or "").strip(),
-            "TipeShift":      str(r.get("tipe_shift") or "").strip(),
-            "JamMasuk":       str(r.get("jam_masuk") or "").strip(),
-            "JamKeluar":      str(r.get("jam_keluar") or "").strip(),
-            "AttResult":      str(r.get("status_absensi") or "").strip(),
-            "Classification": klas,
-            "Remarks":        str(r.get("catatan") or "").strip(),
-            "HasAltLeave":    int(r.get("has_alt_leave") or 0),
-        })
-    return pd.DataFrame(rows)
+    return pd.DataFrame({
+        "Account":        df_db["account"].astype(str).str.strip().values,
+        "Name":           df_db["nama"].astype(str).str.strip().values,
+        "Date":           df_db["tanggal"].astype(str).str.strip().values,
+        "Shift":          df_db["shift"].fillna("").astype(str).str.strip().values,
+        "TipeShift":      df_db["tipe_shift"].fillna("").astype(str).str.strip().values,
+        "JamMasuk":       df_db["jam_masuk"].fillna("").astype(str).str.strip().values,
+        "JamKeluar":      df_db["jam_keluar"].fillna("").astype(str).str.strip().values,
+        "AttResult":      df_db["status_absensi"].fillna("").astype(str).str.strip().values,
+        "Classification": _classification.values,
+        "Remarks":        df_db["catatan"].fillna("").astype(str).str.strip().values,
+        "HasAltLeave":    df_db["has_alt_leave"].fillna(0).astype(int).values,
+    })
 
 
 @st.dialog("📋 Rincian Harian Karyawan", width="large", dismissible=False)
@@ -1179,15 +1175,26 @@ def _populate_calendar_ws(ws, df_daily, df_employees):
     dates = sorted(df_daily["Date"].dropna().unique()) if not df_daily.empty else []
 
     daily_map: dict = {}
-    for _, row in df_daily.iterrows():
-        acc = row["Account"]
-        if acc not in daily_map:
-            daily_map[acc] = {}
-        daily_map[acc][row["Date"]] = (
-            row.get("Shift", ""),
-            row.get("Classification"),
-            str(row.get("Remarks", "") or "").strip(),
-        )
+    if not df_daily.empty:
+        _dm_accs    = df_daily["Account"].values
+        _dm_dates   = df_daily["Date"].values
+        _dm_shifts  = df_daily["Shift"].values          if "Shift"          in df_daily.columns else [""] * len(df_daily)
+        _dm_klas    = df_daily["Classification"].values if "Classification"  in df_daily.columns else [None] * len(df_daily)
+        _dm_remarks = (
+            df_daily["Remarks"].fillna("").astype(str)
+            if "Remarks" in df_daily.columns
+            else pd.Series([""] * len(df_daily))
+        ).values
+        for _acc, _date, _shift, _klas, _rmk in zip(
+            _dm_accs, _dm_dates, _dm_shifts, _dm_klas, _dm_remarks
+        ):
+            if _acc not in daily_map:
+                daily_map[_acc] = {}
+            daily_map[_acc][_date] = (
+                str(_shift) if _shift else "",
+                _klas,
+                str(_rmk).strip(),
+            )
 
     n_date_cols = len(dates)
 
@@ -1362,7 +1369,7 @@ OPTIONAL_COLS_DEF = [
     ("OT",     "📝 OT",           "Cuti Lainnya"),
     ("1/2 OT", "📄 1/2 OT",       "Cuti Lainnya setengah hari"),
     ("RL",     "📅 RL",           "Roster Leave"),
-    ("H",      "🔴 H",            "Hari Libur Nasional"),
+    ("H",      "🔴 H",            "Holiday"),
     ("PL",     "🪪 PL",           "Personal Leave TKA"),
 ]
 OPTIONAL_KEYS   = [c[0] for c in OPTIONAL_COLS_DEF]
@@ -1439,7 +1446,7 @@ _LOGIC_HTML = (
     
     '<tr><td style="padding:0.3rem 0.7rem;"><b>H</b></td>'
     '<td style="padding:0.3rem 0.7rem;"><span style="background:#FF9999;padding:2px 10px;border-radius:3px;">▮ #FF9999</span></td>'
-    '<td style="padding:0.3rem 0.7rem;">Hari Libur Nasional — merah cerah</td></tr>'
+    '<td style="padding:0.3rem 0.7rem;">Holiday — merah cerah</td></tr>'
 
     '<table style="width:100%;border-collapse:collapse;margin-bottom:1.2rem;">'
     '<tr style="background:#f1f5f9;">'
@@ -1825,12 +1832,12 @@ _LOGIC_HTML = (
     'kecuali dialog employee yang sama sudah di-close secara eksplisit (<code>dialog_target == "closed"</code>)<br>'
     '- Hapus blok <code>else</code> yang me-reset <code>dialog_target = None</code> saat tidak ada baris dipilih, '
     'karena dialog mengelola lifecycle-nya sendiri setelah dibuka<br><br>'
-    '<b>9. 🔴 Klasifikasi Baru H — Hari Libur Nasional (Tanggal Merah):</b><br>'
+    '<b>9. 🔴 Klasifikasi Baru H — Holiday:</b><br>'
     '- Status <b>H</b> tidak dihasilkan oleh engine klasifikasi otomatis — hanya diterapkan via fitur <b>Bulk Correction</b><br>'
-    '- <b>Alur kerja Bulk Correction:</b> pilih periode → pilih tanggal merah → pilih Rules (atau semua) → konfirmasi → semua record yang cocok di-update ke H dengan <code>is_manual_override = 1</code><br>'
+    '- <b>Alur kerja Bulk Correction:</b> pilih periode → pilih tanggal → pilih Rules (atau semua) → konfirmasi → semua record yang cocok di-update ke H dengan <code>is_manual_override = 1</code><br>'
     '- Ekspor kalender: sel H diberi warna <code style="background:#FF9999;padding:1px 6px;border-radius:3px;">H (#FF9999)</code><br>'
     '- Status H bersifat override penuh — menimpa apapun yang sebelumnya ada di kolom <code>status_klasifikasi</code><br>'
-    '- Tombol <b>🔴 Tanggal Merah</b> tersedia di action bar kanan atas, dapat diakses tanpa membuka periode terlebih dahulu<br><br>'
+    '- Tombol <b>🔴 Tanggal Holiday</b> tersedia di action bar kanan atas, dapat diakses tanpa membuka periode terlebih dahulu<br><br>'
     '</div>'
 
     '<div style="font-weight:700;color:#0f172a;margin-bottom:0.4rem;font-size:0.82rem;'
@@ -1993,7 +2000,7 @@ with _action_col:
             use_container_width=True,
             type="primary" if _h_active else "secondary",
             key="btn_h_top",
-            help="National Holiday — Bulk correction tanggal merah (hari libur nasional)",
+            help="Holiday — Bulk correction",
         ):
             st.session_state.show_h_panel      = not _h_active
             st.session_state.show_upload_panel = False
@@ -2112,9 +2119,9 @@ if st.session_state.get("show_h_panel", False):
     else:
         st.markdown(
             '<div class="action-panel">'
-            '<div class="action-panel-title">🔴 Bulk Correction — Hari Libur Nasional (H)</div>'
+            '<div class="action-panel-title">🔴 Bulk Correction — Holiday (H)</div>'
             '<div class="action-panel-desc">'
-            'Pilih periode, tanggal merah, dan rules yang terdampak. '
+            'Pilih periode, tanggal, dan rules yang terdampak. '
             'Sistem akan mengubah status seluruh karyawan yang cocok menjadi <b>H</b> secara massal.'
             '</div>',
             unsafe_allow_html=True,
@@ -2131,7 +2138,7 @@ if st.session_state.get("show_h_panel", False):
         with _hp2:
             _hp_all_dates = get_dates_in_periode(_hp_sel_periode)
             _hp_sel_dates = st.multiselect(
-                "📆 Pilih Tanggal Merah",
+                "📆 Pilih Tanggal",
                 options=_hp_all_dates,
                 placeholder="Klik untuk memilih tanggal...",
                 key="hp_dates_select",
@@ -2865,7 +2872,7 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
   <div class="metric-card metric-h">
     <div class="label"><span>🔴</span> H</div>
     <div class="value">{total_h:,}</div>
-    <div class="sub">Tanggal Merah</div>
+    <div class="sub">Holiday</div>
   </div>
   <div class="metric-card metric-pl">
     <div class="label"><span>🪪</span> PL</div>
@@ -3061,71 +3068,60 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
         _emp_list = df_show[["Nama", "Account"]].drop_duplicates("Account").to_dict("records")
 
         # Map data klasifikasi yang ada
-        _daily_map = {}
-        _accounts_with_data: set = set()
-        for _, row in df_daily_cal.iterrows():
-            _acc = row["Account"]
-            _accounts_with_data.add(_acc)
-            if _acc not in _daily_map:
-                _daily_map[_acc] = {}
-            _daily_map[_acc][row["Date"]] = {
-                "Shift":          row.get("Shift", ""),
-                "Classification": row.get("Classification"),
-                "AttResult":      row.get("AttResult", ""),
-                "TipeShift":      row.get("TipeShift", ""),
-                "JamMasuk":       row.get("JamMasuk", ""),
-                "JamKeluar":      row.get("JamKeluar", ""),
-                "HasAltLeave":    int(row.get("HasAltLeave") or 0),
-            }
+        # Bangun grid lengkap (karyawan × tanggal) secara vectorized — tanpa _daily_map perantara
+        _emp_idx   = pd.DataFrame({
+            "Account": [e["Account"] for e in _emp_list],
+            "Name":    [e["Nama"]    for e in _emp_list],
+        })
+        _dates_idx = pd.DataFrame({"Date": _dates})
+        # Cross-join: semua kombinasi karyawan × tanggal
+        _grid = _emp_idx.assign(_k=1).merge(_dates_idx.assign(_k=1), on="_k").drop(columns=["_k"])
 
-        _none_rows = []
-        for _emp in _emp_list:
-            _acc = _emp["Account"]
-            _name = _emp["Nama"]
-            for _d in _dates:
-                _day_info = _daily_map.get(_acc, {}).get(_d)
-                _record_exists = (_acc in _accounts_with_data) and (_day_info is not None)
-                if _day_info is None:
-                    _shift_t  = ""
-                    _klas     = None
-                    _att_res  = ""
-                    _tipe_s   = ""
-                    _jam_in   = ""
-                    _jam_out  = ""
-                else:
-                    _shift_t      = _day_info["Shift"]
-                    _klas         = _day_info["Classification"]
-                    _att_res      = _day_info.get("AttResult", "")
-                    _tipe_s       = _day_info.get("TipeShift", "")
-                    _jam_in       = _day_info.get("JamMasuk", "")
-                    _jam_out      = _day_info.get("JamKeluar", "")
-                    _has_alt_leave= bool(_day_info.get("HasAltLeave", 0))
+        # Left-join dengan data aktual — hanya kolom yang diperlukan
+        _cal_needed = ["Account", "Date", "Shift", "Classification",
+                       "AttResult", "TipeShift", "JamMasuk", "JamKeluar", "HasAltLeave"]
+        _cal_avail  = [c for c in _cal_needed if c in df_daily_cal.columns]
+        _grid = _grid.merge(
+            df_daily_cal[_cal_avail].assign(_in_db=True),
+            on=["Account", "Date"],
+            how="left",
+        )
 
-                # Mengambil referensi langsung dari fungsi penentu tampilan sel kalender
-                if not _get_cell_display(_shift_t, _klas):
-                    _has_db_record = _day_info is not None
-                    if _has_db_record:
-                        _reason = determine_reason(
-                            shift              = _shift_t,
-                            att_result         = _att_res,
-                            status_klasifikasi = _klas,
-                            jam_masuk          = _jam_in,
-                            jam_keluar         = _jam_out,
-                            has_alt_leave      = _has_alt_leave,
-                        )
-                    else:
-                        _reason = "Tidak ada record di database (excel)"
-                    _none_rows.append({
-                        "Account":        _acc,
-                        "Name":           _name,
-                        "Date":           _d,
-                        "Shift":          _shift_t,
-                        "AttResult":      _att_res,
-                        "Classification": _klas,
-                        "Reason":         _reason,
-                        "HasRecord":      _has_db_record,
-                    })
-        _df_none = pd.DataFrame(_none_rows, columns=["Account", "Name", "Date", "Shift", "AttResult", "Classification", "Reason", "HasRecord"])
+        # HasRecord: True jika (Account, Date) ditemukan di df_daily_cal
+        _grid["HasRecord"] = _grid["_in_db"].fillna(False).astype(bool)
+        _grid.drop(columns=["_in_db"], inplace=True)
+
+        # Isi nilai default untuk baris yang tidak cocok (unmatched dari left-join)
+        for _col, _dflt in [("Shift", ""), ("Classification", None), ("AttResult", ""),
+                             ("TipeShift", ""), ("JamMasuk", ""), ("JamKeluar", ""),
+                             ("HasAltLeave", 0)]:
+            if _col not in _grid.columns:
+                _grid[_col] = _dflt
+            else:
+                _grid[_col] = _grid[_col].where(_grid["HasRecord"], _dflt)
+
+        # Filter: hanya sel yang tidak menghasilkan label kalender (tidak terklasifikasi)
+        _grid["_label"] = _grid["Classification"].map(_LABEL_MAP).fillna("")
+        _df_none_work   = _grid[_grid["_label"] == ""].drop(columns=["_label"]).copy()
+
+        # Hitung Reason — hanya untuk baris None (jauh lebih sedikit dari grid penuh)
+        def _calc_reason(row):
+            if not row["HasRecord"]:
+                return "Tidak ada record di database (excel)"
+            return determine_reason(
+                shift              = str(row["Shift"] or ""),
+                att_result         = str(row["AttResult"] or ""),
+                status_klasifikasi = row["Classification"],
+                jam_masuk          = str(row["JamMasuk"] or ""),
+                jam_keluar         = str(row["JamKeluar"] or ""),
+                has_alt_leave      = bool(row["HasAltLeave"] or 0),
+            )
+
+        _df_none_work["Reason"] = _df_none_work.apply(_calc_reason, axis=1)
+        _df_none = _df_none_work[
+            ["Account", "Name", "Date", "Shift", "AttResult",
+             "Classification", "Reason", "HasRecord"]
+        ].reset_index(drop=True)
 
         # ── Step 1: Group _df_none per karyawan ──────────────────────────────
         # Struktur untuk outer table (ringkasan per karyawan)
