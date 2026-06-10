@@ -3120,11 +3120,12 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                         "Name":           _name,
                         "Date":           _d,
                         "Shift":          _shift_t,
+                        "AttResult":      _att_res,
                         "Classification": _klas,
                         "Reason":         _reason,
                         "HasRecord":      _has_db_record,
                     })
-        _df_none = pd.DataFrame(_none_rows, columns=["Account", "Name", "Date", "Shift", "Classification", "Reason", "HasRecord"])
+        _df_none = pd.DataFrame(_none_rows, columns=["Account", "Name", "Date", "Shift", "AttResult", "Classification", "Reason", "HasRecord"])
 
         # ── Step 1: Group _df_none per karyawan ──────────────────────────────
         # Struktur untuk outer table (ringkasan per karyawan)
@@ -3153,7 +3154,12 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
 
                 # Detail map: list {Date, Reason} untuk sub-tabel
                 _none_detail_map[_acc_g] = [
-                    {"Date": row["Date"], "Reason": row["Reason"], "HasRecord": bool(row.get("HasRecord", True))}
+                    {
+                        "Date":      row["Date"],
+                        "AttResult": row.get("AttResult", ""),
+                        "Reason":    row["Reason"],
+                        "HasRecord": bool(row.get("HasRecord", True)),
+                    }
                     for _, row in _grp.sort_values("Date").iterrows()
                 ]
 
@@ -3283,11 +3289,12 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                         _editor_rows = []
                         for _sd in _detail_rows:
                             _editor_rows.append({
-                                "Tanggal"   : _sd["Date"],
-                                "Alasan"    : _sd["Reason"],
-                                "Edit"      : "" if _sd.get("HasRecord", True) else "—",
-                                "Remarks"   : _remarks_map.get(_sd["Date"], "") if _sd.get("HasRecord", True) else "",
-                                "HasRecord" : _sd.get("HasRecord", True),
+                                "Tanggal"    : _sd["Date"],
+                                "Att Result" : _sd.get("AttResult", ""),
+                                "Alasan"     : _sd["Reason"],
+                                "Edit"       : "" if _sd.get("HasRecord", True) else "—",
+                                "Remarks"    : _remarks_map.get(_sd["Date"], "") if _sd.get("HasRecord", True) else "",
+                                "HasRecord"  : _sd.get("HasRecord", True),
                             })
                         _editor_df = pd.DataFrame(_editor_rows)
 
@@ -3302,6 +3309,11 @@ if uploaded is not None or periode_dipilih != _NEW_PERIODE_SENTINEL:
                                     "📅 Tanggal",
                                     disabled=True,
                                     width="small",
+                                ),
+                                "Att Result": st.column_config.TextColumn(
+                                    "📋 Att Result",
+                                    disabled=True,
+                                    width="medium",
                                 ),
                                 "Alasan": st.column_config.TextColumn(
                                     "💬 Alasan",
