@@ -2214,6 +2214,9 @@ if st.session_state.get("show_h_panel", False):
             '</div>',
             unsafe_allow_html=True,
         )
+        # Tampilkan pesan sukses dari run sebelumnya (setelah rerun)
+        if st.session_state.get("_hp_success_msg"):
+            st.success(st.session_state.pop("_hp_success_msg"))
         _hp1, _hp2, _hp3 = st.columns([1, 2, 2], gap="medium")
 
         with _hp1:
@@ -2237,23 +2240,16 @@ if st.session_state.get("show_h_panel", False):
             _hp_all_rules = get_rules_in_periode(_hp_sel_periode)
             _hp_fk = st.session_state.get("_hp_form_key", 0)
             _hp_sel_rules = st.multiselect(
-                "🏷️ Filter Rules (kosong = semua)",
+                "🏷️ Filter Rules",
                 options=_hp_all_rules,
-                placeholder="Semua Rules",
+                placeholder="Select Rules",
                 key=f"hp_rules_select_{_hp_fk}",
             )
 
         # ── Tabel Karyawan Terdampak ──────────────────────────────────────
         _hp_checked_accounts: list[str] = []
 
-        if not _hp_sel_rules:
-            st.markdown(
-                '<div style="background:#f1f5f9;border-radius:10px;padding:0.8rem 1.2rem;'
-                'color:#64748b;font-size:0.85rem;margin-top:0.5rem;">'
-                '⬅️ Pilih Rules terlebih dahulu untuk melihat daftar karyawan</div>',
-                unsafe_allow_html=True,
-            )
-        else:
+        if _hp_sel_rules:
             _hp_emp_df = get_karyawan_in_periode(_hp_sel_periode, _hp_sel_rules)
 
         if _hp_sel_rules and not _hp_emp_df.empty:
@@ -2321,22 +2317,15 @@ if st.session_state.get("show_h_panel", False):
                             accounts_filter=_hp_checked_accounts,
                         )
                     st.cache_data.clear()
-                    # Reset pilihan via key suffix — tidak bisa set widget key
-                    # setelah widget dirender di run yang sama
                     st.session_state["_hp_form_key"] = (
                         st.session_state.get("_hp_form_key", 0) + 1
                     )
-                    st.success(
+                    st.session_state["_hp_success_msg"] = (
                         f"✅ **{_hp_n} record** berhasil diupdate ke **H** "
                         f"pada {len(_hp_sel_dates)} tanggal di periode {_hp_sel_periode}."
                     )
-        else:
-            st.markdown(
-                '<div style="background:#f1f5f9;border-radius:10px;padding:0.8rem 1.2rem;'
-                'color:#64748b;font-size:0.85rem;">'
-                '⬅️ Pilih tanggal terlebih dahulu</div>',
-                unsafe_allow_html=True,
-            )
+                    st.rerun()
+
         st.markdown('</div>', unsafe_allow_html=True)
 
 
