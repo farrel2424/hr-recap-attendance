@@ -1034,7 +1034,6 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                             "Jam Keluar" : str(_er.get("jam_keluar") or ""),
                             "Klasifikasi": _kfirst,
                             "Catatan"    : str(_er.get("catatan")    or ""),
-                            "Override"   : bool(_er.get("is_manual_override") or 0),
                         })
                     _edit_df = pd.DataFrame(_erows)
 
@@ -1061,8 +1060,6 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                             ),
                             "Catatan"    : st.column_config.TextColumn(
                                 "📝 Catatan / Keterangan", width="large"),
-                            "Override"   : st.column_config.CheckboxColumn(
-                                "🔒 Override", width="small"),
                         },
                     )
 
@@ -1081,7 +1078,7 @@ def show_daily_detail(account, nama, rules, file_bytes=None, periode=None):
                                     jam_keluar         = str(_row["Jam Keluar"]  or ""),
                                     status_klasifikasi = str(_row["Klasifikasi"] or "None"),
                                     catatan            = str(_row["Catatan"]     or ""),
-                                    is_manual_override = 1 if _row["Override"] else 0,
+                                    is_manual_override = 1
                                 )
                                 _saved_n += 1
                             except Exception as _e_row:
