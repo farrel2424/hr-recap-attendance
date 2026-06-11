@@ -2254,25 +2254,51 @@ if st.session_state.get("show_h_panel", False):
 
         if _hp_sel_rules and not _hp_emp_df.empty:
             _hp_emp_disp = _hp_emp_df.copy()
-            _hp_emp_disp.insert(0, "Pilih", True)
+
+            # ── Uncheck/Check All state ──────────────────────────────────────
+            # _hp_uncheck_state: dict { sel_key → bool }
+            #   True  = semua di-uncheck (user klik "Batal Semua")
+            #   False = semua di-check   (default / user klik "Pilih Semua")
+            _hp_sel_key    = _hp_sel_periode + "_" + "_".join(sorted(_hp_sel_rules or []))
+            _hp_unc_state  = st.session_state.get("_hp_uncheck_state", {})
+            _hp_all_unc    = _hp_unc_state.get(_hp_sel_key, False)        # True → unchecked
+            _hp_unc_ver    = _hp_unc_state.get(_hp_sel_key + "_ver", 0)   # force key regen
+            _hp_default    = not _hp_all_unc                              # True = centang semua
+
+            _hp_emp_disp.insert(0, "Pilih", _hp_default)
             _hp_emp_disp.insert(0, "No.", range(1, len(_hp_emp_disp) + 1))
 
-            # Key berubah saat periode atau rules berubah → checkbox reset otomatis
+            # Key berubah saat periode, rules, atau toggle berubah → checkbox reset otomatis
             _hp_emp_key = (
                 "hp_emp_"
                 + _hp_sel_periode
                 + "_"
                 + "_".join(sorted(_hp_sel_rules or []))
+                + f"_v{_hp_unc_ver}"
             )
 
-            st.markdown(
-                f'<div style="font-size:0.82rem;font-weight:600;'
-                f'color:var(--text-secondary);margin:.9rem 0 .4rem;">'
-                f'👥 Karyawan terdampak — <b>{len(_hp_emp_disp)}</b> orang &nbsp;'
-                f'<span style="color:var(--text-faint);font-weight:400;">'
-                f'· kosongkan checkbox untuk mengecualikan</span></div>',
-                unsafe_allow_html=True,
-            )
+            _hp_hdr_col, _hp_btn_col = st.columns([5, 1])
+            with _hp_hdr_col:
+                st.markdown(
+                    f'<div style="font-size:0.82rem;font-weight:600;'
+                    f'color:var(--text-secondary);margin:.9rem 0 .4rem;">'
+                    f'👥 Karyawan terdampak — <b>{len(_hp_emp_disp)}</b> orang &nbsp;'
+                    f'<span style="color:var(--text-faint);font-weight:400;">'
+                    f'· kosongkan checkbox untuk mengecualikan</span></div>',
+                    unsafe_allow_html=True,
+                )
+            with _hp_btn_col:
+                _btn_label = "☑️ Pilih Semua" if _hp_all_unc else "🔲 Uncheck All"
+                if st.button(
+                    _btn_label,
+                    key=f"btn_hp_toggle_{_hp_sel_key}",
+                    use_container_width=True,
+                ):
+                    _hp_unc_state[_hp_sel_key]          = not _hp_all_unc
+                    _hp_unc_state[_hp_sel_key + "_ver"] = _hp_unc_ver + 1
+                    st.session_state["_hp_uncheck_state"] = _hp_unc_state
+                    st.rerun()
+
             _hp_edited_emp = st.data_editor(
                 _hp_emp_disp,
                 key=_hp_emp_key,
