@@ -222,6 +222,13 @@ def classify(
     if ul_result:
         return ul_result
 
+    # ── 7.5. Missed punch = 1 → 1/2 UL ─────────────────────────────────────
+    #   Diprioritaskan setara UL 0.5 — dicek SEBELUM WFA/HL/ML/durasi.
+    #   Jika missed punch bersamaan dengan Late dari durasi, missed punch menang.
+    _mp_val = parse_day_value(missed_punch_count)
+    if _mp_val is not None and abs(_mp_val - 1.0) < 0.01:
+        return ["1/2 UL"]
+
     # ── 8. WFA / 1/2 WFA — Kolom WFH-WorkFromHome ───────────────────────────
     #   nilai 1 → WFA   |   nilai 0.5 → 1/2 WFA
     wfa_result = _classify_wfa(wfh_count)
@@ -275,13 +282,6 @@ def classify(
             return ["1/2 UL"]
         return ["Late"]
 
-    # ── 14.5. Missed punch = 1 → 1/2 UL ────────────────────────────────────
-    #   Jika jumlah punch yang terlewat tepat 1, karyawan dianggap tidak
-    #   melengkapi presensi sehingga dikenai setengah hari Unpaid Leave.
-    #   Hanya aktif bila langkah 9-10 tidak menangkap keterlambatan/early dep.
-    _mp_val = parse_day_value(missed_punch_count)
-    if _mp_val is not None and abs(_mp_val - 1.0) < 0.01:
-        return ["1/2 UL"]
 
     # ── 15. S (Shift) — att_result TEPAT "Normal" atau "Normal（Correction…）" ─
     if att_str in S_ATT_RESULTS:
